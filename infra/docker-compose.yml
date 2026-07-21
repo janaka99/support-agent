@@ -1,16 +1,18 @@
-version: "3.8"
 
 services:
   api:
     build:
       context: ../server
       dockerfile: Dockerfile
+    command: sh -c "python -m alembic upgrade head && python -m scripts.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     ports:
       - "8000:8000"
     volumes:
       - ../server:/app
     env_file:
       - ../.env
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@postgres:5432/postgres
     depends_on:
       - postgres
       - redis
@@ -36,9 +38,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: user
+      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: mydb
+      POSTGRES_DB: postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
 

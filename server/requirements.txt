@@ -1,2 +1,8 @@
 fastapi[standard]
 pydantic-settings
+sqlalchemy
+alembic
+asyncpg
+openai
+langgraph
+langchain-openai
