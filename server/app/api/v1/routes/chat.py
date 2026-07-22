@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from app.core.database import get_db
 from app.db.models import Org, Conversation, Message
 from app.schemas.chat import ChatRequest, ChatResponse
-from app.agent.graph import agent_graph
+from app.agent.graph import order_agent_graph
 
 router = APIRouter()
 
@@ -65,13 +65,14 @@ async def chat_endpoint(
 
     # Invoke LangGraph graph
     try:
-        graph_result = await agent_graph.ainvoke({
+        graph_result = await order_agent_graph.ainvoke({
             "messages": langchain_messages,
             "conversation_id": str(conversation.id)
         })
         last_message = graph_result["messages"][-1]
         assistant_content = str(last_message.content)
     except Exception as e:
+        print(e)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"LangGraph Agent Error: {str(e)}"
