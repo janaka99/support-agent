@@ -89,7 +89,7 @@ async def chat_endpoint(
 
     return ChatResponse(
         conversation_id=conversation.id,
-        response=assistant_content,
+        content=assistant_content,
         role="assistant"
     )
 

@@ -8,5 +8,5 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     conversation_id: UUID
-    response: str
+    content: str
     role: str = "assistant"
