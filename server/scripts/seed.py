@@ -16,9 +16,12 @@ async def seed():
         # Create an org
         org_id = uuid.uuid4()
         org = Org(id=org_id, name="Acme Corp")
-        
+        from fastapi_users.password import PasswordHelper
+        password_helper = PasswordHelper()
+        hashed_password = password_helper.hash("admin")
+
         # Create a user
-        user = User(id=uuid.uuid4(), org_id=org_id, email="admin@acme.com")
+        user = User(id=uuid.uuid4(), org_id=org_id, email="admin@acme.com", hashed_password=hashed_password)
         
         session.add(org)
         session.add(user)

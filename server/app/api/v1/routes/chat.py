@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from app.core.database import get_db
 from app.db.models import Org, Conversation, Message
 from app.schemas.chat import ChatRequest, ChatResponse
-from app.agent.graph import order_agent_graph
+from app.agent.graph import build_graph
 
 router = APIRouter()
 
@@ -39,6 +39,7 @@ async def chat_endpoint(
     # Save incoming user message
     user_msg = Message(
         conversation_id=conversation.id,
+        org_id=conversation.org_id,
         role="user",
         content=body.message
     )
@@ -65,7 +66,8 @@ async def chat_endpoint(
 
     # Invoke LangGraph graph
     try:
-        graph_result = await order_agent_graph.ainvoke({
+        dynamic_graph = await build_graph(str(conversation.org_id), db)
+        graph_result = await dynamic_graph.ainvoke({
             "messages": langchain_messages,
             "conversation_id": str(conversation.id)
         })
@@ -81,6 +83,7 @@ async def chat_endpoint(
     # Save assistant response
     assistant_msg = Message(
         conversation_id=conversation.id,
+        org_id=conversation.org_id,
         role="assistant",
         content=assistant_content
     )

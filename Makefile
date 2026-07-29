@@ -1,0 +1,70 @@
+.PHONY: migrate upgrade seed test dev fix-alembic up down logs logs-api logs-web shell-api shell-web build recreate recreate-api restart
+
+# ==========================================
+# Local Server Commands
+# ==========================================
+migrate:
+	cd server && python -m alembic revision --autogenerate -m "$(MSG)"
+
+upgrade:
+	cd server && python -m alembic upgrade head
+
+seed:
+	cd server && python -m scripts.seed
+
+test:
+	cd server && python -m scripts.test_chat
+
+dev:
+	cd server && python -m uvicorn app.main:app --reload
+
+# Fixes "Can't locate revision identified by X" by wiping the migration table and restamping to head
+fix-alembic:
+	cd server && python -m alembic stamp head
+
+# ==========================================
+# Docker Commands
+# ==========================================
+# Start all services
+up:
+	docker-compose -f infra/docker-compose.yml up -d
+
+# Stop all services
+down:
+	docker-compose -f infra/docker-compose.yml down
+
+# View logs for all services
+logs:
+	docker-compose -f infra/docker-compose.yml logs -f
+
+# View logs for just the API (server)
+logs-api:
+	docker-compose -f infra/docker-compose.yml logs -f api
+
+# View logs for just the web frontend
+logs-web:
+	docker-compose -f infra/docker-compose.yml logs -f web
+
+# Open a shell in the API container
+shell-api:
+	docker-compose -f infra/docker-compose.yml exec api sh
+
+# Open a shell in the web container
+shell-web:
+	docker-compose -f infra/docker-compose.yml exec web sh
+
+# Build docker images
+build:
+	docker-compose -f infra/docker-compose.yml build
+
+# Rebuild and recreate all containers
+recreate:
+	docker-compose -f infra/docker-compose.yml up -d --force-recreate --build
+
+# Rebuild and recreate just the API container
+recreate-api:
+	docker-compose -f infra/docker-compose.yml up -d --force-recreate --build api
+
+# Restart all services without rebuilding
+restart:
+	docker-compose -f infra/docker-compose.yml restart

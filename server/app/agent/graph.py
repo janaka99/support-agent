@@ -1,72 +1,140 @@
-from app.agent.tools.payment import check_payment_status
-from app.agent.nodes.supervisor import supervisor_node
-from typing import Annotated, Sequence, TypedDict
-from langchain_core.messages import BaseMessage
+import uuid
+from typing import TypedDict, Any
+from enum import Enum
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
+from langchain_core.messages import SystemMessage
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from app.agent.nodes.order_agent import order_specialist_node
-from app.agent.nodes.payment_agent import payment_specialist_node
-from app.agent.nodes.clarify import clarify_node
-from app.agent.tools.orders import get_order_status, get_order_history
+from app.db.models import Agent, Document
 from app.agent.state import AgentState
+from app.agent.tools import TOOL_REGISTRY
+from app.agent.nodes.clarify import clarify_node
+from app.core.config import settings
 
-
-def route_from_supervisor(state:AgentState) -> str:
-    """
-    Reads the 'next_node' from the state and returns it.
-    """
+def route_from_supervisor(state: AgentState) -> str:
     next_node = state.get("next_node", "unclear")
     if next_node == "unclear":
         return "clarify_node"
     else:
         return next_node
 
-# Build state graph
-workflow = StateGraph(AgentState)
-workflow.add_node("supervisor_node", supervisor_node)
-workflow.add_node("order_agent", order_specialist_node)
-workflow.add_node("payment_agent", payment_specialist_node)
-workflow.add_node("clarify_node", clarify_node)
-
-workflow.add_node("tools", ToolNode([get_order_status, get_order_history, check_payment_status]))
-
-workflow.add_edge(START, "supervisor_node")
-
-# Supervisor conditional routing 
-workflow.add_conditional_edges(
-    "supervisor_node",
-    route_from_supervisor,
-    {
-        "order_agent": "order_agent",
-        "payment_agent": "payment_agent",
-        "clarify_node": "clarify_node"
-    }
-)
-
-# Clarify node ends the turn
-workflow.add_edge("clarify_node", END)
-
-workflow.add_conditional_edges("order_agent", tools_condition)
-workflow.add_conditional_edges("payment_agent", tools_condition)
-
-# 4. Tools route back to the agent that called them
-# Since prebuilt tool nodes return to the caller automatically in some setups,
-# or we have to route back. For now, routing tools to END is safer so we don't loop,
-# or we can route back to supervisor (but supervisor needs to handle tool messages).
-# To properly route back to the calling agent, we would need a custom router.
-# Let's assume the specialist agent finished its job, or we route back to supervisor.
-# Actually, the simplest fix for a basic bot: just route to END so the tool result goes to the user.
-# Wait, if tools route to END, the user sees the raw JSON tool response!
-# So tools *must* route back to the agents.
-# We can create a simple router that checks the last message.
 def route_from_tools(state: AgentState) -> str:
-    # A hacky but effective way to know who called the tool is to ask the supervisor to look at the history,
-    # or just look at the last AIMessage's tool_calls.
-    # Since we can't easily know here without a complex state, let's route back to supervisor.
     return "supervisor_node"
 
-workflow.add_edge("tools", "supervisor_node")
+async def build_graph(org_id: str, db: AsyncSession):
+    # Fetch agents for the org
+    result = await db.execute(select(Agent).where(Agent.org_id == uuid.UUID(org_id)))
+    agents = result.scalars().all()
+    
+    agent_names = []
+    routing_info = []
+    
+    for agent in agents:
+        agent_names.append(agent.name)
+        # Assuming specialization provides the context for routing
+        routing_info.append(f"If the request is about {agent.specialization}, route to '{agent.name}'.")
+        
+    routing_instructions = " ".join(routing_info)
+    
+    supervisor_prompt = (
+        "You are a supervisor router. Your job is to classify the user's latest message. "
+        f"{routing_instructions} "
+        "If it's neither or unclear, route to 'unclear'."
+    )
+    
+    llm = ChatOpenAI(model="gpt-4o-mini", api_key=settings.OPENAI_API_KEY)
+    
+    async def dynamic_supervisor_node(state: AgentState) -> dict:
+        system_message = SystemMessage(content=supervisor_prompt)
+        
+        if not agent_names:
+            return {"next_node": "unclear"}
+            
+        # Dynamically create the enum and model for structured output
+        routes_dict = {name: name for name in agent_names}
+        routes_dict["unclear"] = "unclear"
+        RouteEnum = Enum('RouteEnum', routes_dict)
+        
+        class RouteSelection(BaseModel):
+            next: RouteEnum
+            
+        structured_llm = llm.with_structured_output(RouteSelection)
+        decision = await structured_llm.ainvoke([system_message] + list(state['messages']))
+        
+        return {"next_node": decision.next.value}
 
-order_agent_graph = workflow.compile()
+    workflow = StateGraph(AgentState)
+    workflow.add_node("supervisor_node", dynamic_supervisor_node)
+    workflow.add_node("clarify_node", clarify_node)
+    
+    workflow.add_edge(START, "supervisor_node")
+    workflow.add_edge("clarify_node", END)
+    
+    # Conditional mapping for supervisor
+    conditional_map = {"clarify_node": "clarify_node"}
+    for name in agent_names:
+        conditional_map[name] = name
+        
+    workflow.add_conditional_edges(
+        "supervisor_node",
+        route_from_supervisor,
+        conditional_map
+    )
+    
+    all_tools = []
+    
+    for agent in agents:
+        agent_tools = []
+        if agent.tools:
+            for tool_name in agent.tools:
+                if tool_name in TOOL_REGISTRY:
+                    agent_tools.append(TOOL_REGISTRY[tool_name])
+                    if TOOL_REGISTRY[tool_name] not in all_tools:
+                        all_tools.append(TOOL_REGISTRY[tool_name])
+                        
+        def create_agent_node(agent_id: uuid.UUID, sys_prompt: str, tools: list, model_name: str):
+            async def agent_node(state: AgentState) -> dict:
+                # 1. RAG Retrieval
+                user_message = next((m for m in reversed(state["messages"]) if m.type == "user"), None)
+                knowledge_context = ""
+                if user_message:
+                    query_text = user_message.content
+                    embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small", api_key=settings.OPENAI_API_KEY)
+                    query_embedding = await embeddings_model.aembed_query(query_text)
+                    
+                    # Search DB for top 3 matching chunks
+                    stmt = select(Document).where(Document.agent_id == agent_id).order_by(Document.embedding.cosine_distance(query_embedding)).limit(3)
+                    result = await db.execute(stmt)
+                    docs = result.scalars().all()
+                    
+                    if docs:
+                        knowledge_context = "\n\nKnowledge Base Context:\n" + "\n---\n".join([doc.content for doc in docs])
+                
+                # 2. LLM Invocation
+                agent_llm = ChatOpenAI(model=model_name, api_key=settings.OPENAI_API_KEY)
+                if tools:
+                    agent_llm = agent_llm.bind_tools(tools)
+                    
+                final_prompt = sys_prompt + knowledge_context
+                sys_msg = SystemMessage(content=final_prompt)
+                
+                response = await agent_llm.ainvoke([sys_msg] + list(state["messages"]))
+                return {"messages": [response]}
+            return agent_node
+            
+        workflow.add_node(agent.name, create_agent_node(agent.id, agent.system_prompt, agent_tools, agent.model))
+        
+        if agent_tools:
+            workflow.add_conditional_edges(agent.name, tools_condition)
+        else:
+            workflow.add_edge(agent.name, END)
+            
+    if all_tools:
+        workflow.add_node("tools", ToolNode(all_tools))
+        workflow.add_edge("tools", "supervisor_node")
+        
+    return workflow.compile()

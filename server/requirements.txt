@@ -6,3 +6,7 @@ asyncpg
 openai
 langgraph
 langchain-openai
+fastapi-users[sqlalchemy]
+fastapi-users-db-sqlalchemy
+python-multipart
+pgvector

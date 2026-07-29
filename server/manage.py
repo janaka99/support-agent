@@ -14,6 +14,7 @@ def main():
         print("  seed             - Run the database seed script")
         print("  test             - Run internal route tests")
         print("  dev              - Run the FastAPI development server")
+        print("  provision        - Provision a new org: python manage.py provision \"Org Name\" email@domain.com")
         sys.exit(1)
 
     cmd = sys.argv[1]
@@ -30,6 +31,14 @@ def main():
             run_command('python -m scripts.test_chat')
         elif cmd == "dev":
             run_command('python -m uvicorn app.main:app --reload')
+        elif cmd == "provision":
+            if len(sys.argv) < 4:
+                print("Error: Missing arguments for provision.")
+                print("Usage: python manage.py provision \"<Org Name>\" <admin_email>")
+                sys.exit(1)
+            org_name = sys.argv[2]
+            admin_email = sys.argv[3]
+            run_command(f'python -m scripts.provision_org "{org_name}" "{admin_email}"')
         else:
             print(f"Unknown command: {cmd}")
     except subprocess.CalledProcessError as e:

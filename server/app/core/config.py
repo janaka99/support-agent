@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     OPENAI_API_KEY: str
     REDIS_URL: str
+    SECRET_KEY: str = "supersecretkey_change_in_production"
     
     # Comma-separated list of CORS origins
     CORS_ORIGINS: str = ""
