@@ -1,4 +1,3 @@
-
 services:
   api:
     build:
@@ -12,9 +11,10 @@ services:
     env_file:
       - ../.env
     environment:
-      - DATABASE_URL=postgresql://postgres:password@postgres:5432/postgres
+      - DATABASE_URL=postgresql://postgres:password@pgbouncer:6432/postgres
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
-      - postgres
+      - pgbouncer
       - redis
 
   web:
@@ -48,6 +48,53 @@ services:
     image: redis:7
     ports:
       - "6379:6379"
+
+  worker:
+    build:
+      context: ../server
+      dockerfile: Dockerfile
+    command: sh -c "python -m app.worker.main"
+    volumes:
+      - ../server:/app
+    env_file:
+      - ../.env
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@pgbouncer:6432/postgres
+      - REDIS_URL=redis://redis:6379/0
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - pgbouncer
+      - redis
+      - api
+    deploy:
+      replicas: 4
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    ports:
+      - "6432:6432"
+    environment:
+      - DB_USER=postgres
+      - DB_PASSWORD=password
+      - DB_NAME=postgres
+      - DB_HOST=postgres
+      - LISTEN_PORT=6432
+      - AUTH_TYPE=scram-sha-256
+      - POOL_MODE=transaction
+      - MAX_CLIENT_CONN=1000
+      - DEFAULT_POOL_SIZE=100
+    depends_on:
+      - postgres
+
+  locust:
+    image: locustio/locust
+    ports:
+      - "8089:8089"
+    volumes:
+      - ../server/scripts:/mnt/locust
+    command: -f /mnt/locust/locustfile.py --host http://api:8000
+    depends_on:
+      - api
 
 volumes:
   postgres_data:

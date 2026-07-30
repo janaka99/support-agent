@@ -6,10 +6,12 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { LayoutDashboard, Bot, Users, Settings } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { useEffect, useState } from "react";
 
 const navItems = [
   { label: "Overview", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Chat", href: "/dashboard/chat", icon: Bot },
   { label: "Agents", href: "/dashboard/agents", icon: Bot },
   { label: "Team", href: "/dashboard/team", icon: Users },
   { label: "Settings", href: "/dashboard/settings", icon: Settings },
@@ -30,7 +32,7 @@ export default function DashboardLayout({
   if (isLoading || !isMounted) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Spinner className="text-[--accent]" />
+        <Spinner size="lg" className="text-[--accent]" />
       </div>
     );
   }
@@ -45,18 +47,20 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen flex bg-background">
-      <Sidebar 
-        items={navItems} 
-        title="Dashboard" 
-        subtitle="Org Portal"
-      />
-      <div className="flex-1 ml-64 flex flex-col">
-        <Topbar />
-        <main className="flex-1 p-8 overflow-y-auto">
-          {children}
-        </main>
+    <SidebarProvider>
+      <div className="flex min-h-screen w-full bg-[--bg-base]">
+        <Sidebar
+          items={navItems}
+          title="Support Agent"
+          subtitle="Dashboard"
+        />
+        <SidebarInset className="flex flex-col flex-1 min-w-0 bg-transparent">
+          <Topbar />
+          <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
+            {children}
+          </main>
+        </SidebarInset>
       </div>
-    </div>
+    </SidebarProvider>
   );
 }

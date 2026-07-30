@@ -32,6 +32,7 @@ class Conversation(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     org_id = Column(UUID(as_uuid=True), ForeignKey("orgs.id"), nullable=False)
     status = Column(String, nullable=False, default="open") # "open", "closed", etc.
+    title = Column(String, nullable=True)
     
     org = relationship("Org", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation")

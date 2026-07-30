@@ -21,7 +21,7 @@ export function AgentTable({ agents, isLoading }: { agents: Agent[], isLoading: 
         },
         {
           header: "Specialization",
-          cell: (a) => <span className="text-[--text-muted]">{a.specialization}</span>
+          cell: (a) => <span className="text-[--text-secondary]">{a.specialization}</span>
         },
         {
           header: "Model",
@@ -33,7 +33,7 @@ export function AgentTable({ agents, isLoading }: { agents: Agent[], isLoading: 
           cell: (a) => (
             <div className="flex justify-end">
               <Link href={`/dashboard/agents/${a.id}`}>
-                <Button variant="ghost" className="h-8 w-8 p-0" title="Edit Agent">
+                <Button variant="ghost" size="icon" className="btn-sm" title="Edit Agent">
                   <Edit2 className="w-4 h-4" />
                 </Button>
               </Link>

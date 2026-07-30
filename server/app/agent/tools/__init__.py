@@ -1,8 +1,9 @@
 from .orders import get_order_status, get_order_history
-from .payment import check_payment_status
+from .payment import check_payment_status, process_refund
 
 TOOL_REGISTRY = {
     "get_order_status": get_order_status,
     "get_order_history": get_order_history,
-    "check_payment_status": check_payment_status
+    "check_payment_status": check_payment_status,
+    "process_refund": process_refund
 }

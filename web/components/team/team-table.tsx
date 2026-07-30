@@ -40,7 +40,7 @@ export function TeamTable({ users, isLoading, onRefresh }: TeamTableProps) {
         },
         {
           header: "Role",
-          cell: (u) => <span className="text-[--text-muted] capitalize">{u.role}</span>
+          cell: (u) => <span className="text-[--text-secondary] capitalize">{u.role}</span>
         },
         {
           header: "Status",
@@ -59,7 +59,7 @@ export function TeamTable({ users, isLoading, onRefresh }: TeamTableProps) {
               <div className="flex justify-end">
                 <Button 
                   variant="ghost" 
-                  className="h-8 w-8 p-0 text-[--text-muted] hover:text-[--error] hover:bg-red-500/10" 
+                  className="text-[--text-muted] hover:text-[--error] hover:bg-[rgba(239,68,68,0.08)]" 
                   title="Remove Member"
                   onClick={() => handleRemove(u.id)}
                 >

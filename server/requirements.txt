@@ -10,3 +10,7 @@ fastapi-users[sqlalchemy]
 fastapi-users-db-sqlalchemy
 python-multipart
 pgvector
+redis
+langgraph-checkpoint-postgres
+psycopg-pool
+psycopg[binary]

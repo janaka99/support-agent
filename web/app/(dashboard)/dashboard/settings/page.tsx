@@ -2,47 +2,65 @@
 
 import { PageHeader } from "@/components/layout/page-header";
 import { useAuth } from "@/contexts/auth";
-import { Card } from "@/components/ui/card";
-import { FormField } from "@/components/forms/form-field";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export default function SettingsPage() {
   const { user } = useAuth();
 
   return (
-    <div className="max-w-6xl mx-auto animate-in fade-in duration-500">
-      <PageHeader 
-        title="Settings" 
+    <div className="max-w-6xl mx-auto">
+      <PageHeader
+        title="Settings"
         description="Manage your organization preferences."
       />
-      
-      <div className="grid gap-8 mt-6">
-        <Card className="p-6 max-w-2xl">
-          <h3 className="text-lg font-medium text-[--text-primary] mb-4">Organization Profile</h3>
-          
-          <div className="space-y-6">
-            <FormField label="Organization Name">
+
+      <div className="grid gap-6 mt-2 max-w-2xl">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold text-[--text-primary]">
+              Organization Profile
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Organization Name</Label>
               <Input value="Your Organization" disabled readOnly />
-            </FormField>
-            
-            <FormField label="Organization ID">
-              <Input value={user?.org_id || ""} disabled readOnly className="font-mono text-sm" />
-            </FormField>
-          </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Organization ID</Label>
+              <Input
+                value={user?.org_id || ""}
+                disabled
+                readOnly
+                className="font-mono text-xs"
+              />
+            </div>
+          </CardContent>
         </Card>
-        
-        <Card className="p-6 max-w-2xl">
-          <h3 className="text-lg font-medium text-[--text-primary] mb-4">Your Account</h3>
-          
-          <div className="space-y-6">
-            <FormField label="Email Address">
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold text-[--text-primary]">
+              Your Account
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-1.5">
+              <Label>Email Address</Label>
               <Input value={user?.email || ""} disabled readOnly />
-            </FormField>
-            
-            <FormField label="Role">
-              <Input value={user?.role || ""} disabled readOnly className="capitalize" />
-            </FormField>
-          </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Role</Label>
+              <Input
+                value={user?.role || ""}
+                disabled
+                readOnly
+                className="capitalize"
+              />
+            </div>
+          </CardContent>
         </Card>
       </div>
     </div>

@@ -47,8 +47,8 @@ No raw `fetch()` inside components or pages. Import from `lib/api`.
 ### 2. Auth state comes from `useAuth()`
 Never read from `localStorage` directly in a component. The context handles it.
 
-### 3. Forms use react-hook-form + zod
-Every form has a Zod schema. No raw `useState` for form inputs.
+### 3. Forms use react-hook-form + zod + ui/form
+Every form has a Zod schema. No raw `useState` for form inputs. Use the consolidated `<Form>`, `<FormField>`, `<FormItem>`, `<FormControl>`, etc. components from `@/components/ui/form`.
 
 ### 4. Class names use `cn()`
 Import from `@/lib/utils`. Never concatenate class strings manually.
@@ -67,13 +67,13 @@ Pages under `(dashboard)/` are protected by `middleware.ts`. Pages should also d
 
 ## Design System
 
-**Palette — slate-based dark, not black**
-- Background base: `#0f172a` (slate-900)
-- Surfaces: `#1e293b` (slate-800)
-- Accent: `#14b8a6` (teal-500)
-- Text primary: `#f1f5f9`
-- Text muted: `#94a3b8`
+**Palette — Zinc / Indigo**
+- Background base: `#09090b` (zinc-950)
+- Surfaces: `#18181b` (zinc-900)
+- Accent: `#6366f1` (indigo-500)
+- Text primary: `#fafafa`
+- Text secondary: `#a1a1aa`
 
-**Signature:** Sidebar uses frosted glass `backdrop-blur-sm` — the one memorable visual.
+**Signature:** Sidebar uses heavily frosted glass `backdrop-blur(16px)` with `rgba(24, 24, 27, 0.70)`. Uses composable Cards (`Card`, `CardHeader`, `CardContent`, etc.) for all data containers.
 
 Full token table and component guidelines in `.agent/skills/web-rules/SKILL.md`.

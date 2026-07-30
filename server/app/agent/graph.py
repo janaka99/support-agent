@@ -25,7 +25,7 @@ def route_from_supervisor(state: AgentState) -> str:
 def route_from_tools(state: AgentState) -> str:
     return "supervisor_node"
 
-async def build_graph(org_id: str, db: AsyncSession):
+async def build_graph(org_id: str, db: AsyncSession, checkpointer=None):
     # Fetch agents for the org
     result = await db.execute(select(Agent).where(Agent.org_id == uuid.UUID(org_id)))
     agents = result.scalars().all()
@@ -137,4 +137,4 @@ async def build_graph(org_id: str, db: AsyncSession):
         workflow.add_node("tools", ToolNode(all_tools))
         workflow.add_edge("tools", "supervisor_node")
         
-    return workflow.compile()
+    return workflow.compile(checkpointer=checkpointer)
