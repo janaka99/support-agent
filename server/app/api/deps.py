@@ -26,3 +26,7 @@ async def get_superuser_db(
     async with async_session_maker() as session:
         await session.execute(text("SET app.is_superuser = 'true'"))
         yield session
+
+# Standard aliases for consistency across routes
+get_db = get_tenant_db
+get_current_user = current_active_user

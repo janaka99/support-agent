@@ -3,25 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/auth";
-import { LogOut, Shield } from "lucide-react";
-import {
-  Sidebar as ShadcnSidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarGroup,
-  SidebarGroupLabel,
-  SidebarGroupContent,
-  useSidebar,
-} from "@/components/ui/sidebar";
+import { LogOut, Shield, Sparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export interface NavItem {
   label: string;
   href: string;
-  icon: React.ElementType; // Lucide icon
+  icon: React.ElementType;
 }
 
 interface SidebarProps {
@@ -32,88 +20,91 @@ interface SidebarProps {
 
 export function Sidebar({ items, title, subtitle }: SidebarProps) {
   const pathname = usePathname();
-  const { logout } = useAuth();
-  const { setOpenMobile } = useSidebar();
+  const { user, logout } = useAuth();
 
   return (
-    // No "inset" variant — this runs flush, full height, edge-to-edge
-    // with the topbar above it, rather than as a floating margined card.
-    <ShadcnSidebar className="sidebar">
-      <SidebarHeader className="p-5 border-b border-border">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-9 h-9 rounded-md bg-accent-muted shrink-0">
-            <Shield className="w-4.5 h-4.5 text-accent" />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-text-primary tracking-tight truncate">
-              {title}
-            </h2>
-            {subtitle && (
-              <p className="text-xs text-text-muted truncate">{subtitle}</p>
-            )}
-          </div>
+    <aside className="w-64 h-screen sticky top-0 flex flex-col shrink-0 bg-bg-surface/80 border-r border-border backdrop-blur-xl z-30 select-none">
+      {/* Header / Brand */}
+      <div className="p-5 border-b border-border flex items-center gap-3">
+        <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-accent-muted border border-accent/20 text-accent shrink-0 shadow-xs">
+          <Sparkles className="w-4.5 h-4.5" />
         </div>
-      </SidebarHeader>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-semibold text-text-primary tracking-tight truncate">
+            {title}
+          </h2>
+          {subtitle && (
+            <p className="text-[11px] text-text-muted truncate">{subtitle}</p>
+          )}
+        </div>
+      </div>
 
-      <SidebarContent className="px-3 py-4">
-        <SidebarGroup>
-          <SidebarGroupLabel className="px-2 mb-1 text-[11px] font-medium uppercase tracking-wider text-text-muted">
-            Platform
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu className="gap-1">
-              {items.map((item) => {
-                const isActive =
-                  pathname === item.href ||
-                  pathname.startsWith(`${item.href}/`);
-                const Icon = item.icon;
+      {/* Navigation Links */}
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+        <div>
+          <div className="px-3 mb-2 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+            Platform Studio
+          </div>
+          <nav className="space-y-1">
+            {items.map((item) => {
+              const isActive =
+                pathname === item.href ||
+                (item.href !== "/dashboard" && pathname.startsWith(`${item.href}`));
+              const Icon = item.icon;
 
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={isActive}
-                      tooltip={item.label}
-                      className={
-                        isActive
-                          ? "h-9 rounded-md bg-accent-muted text-accent border-l-2 border-accent rounded-l-none pl-2.5"
-                          : "h-9 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-elevated"
-                      }
-                    >
-                      <Link
-                        href={item.href}
-                        onClick={() => setOpenMobile(false)}
-                        className="flex items-center gap-2.5 text-sm"
-                      >
-                        <Icon className="w-4 h-4 shrink-0" />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-      </SidebarContent>
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-150 group",
+                    isActive
+                      ? "bg-accent-muted text-accent font-semibold shadow-xs"
+                      : "text-text-secondary hover:text-text-primary hover:bg-bg-elevated/70"
+                  )}
+                >
+                  <Icon
+                    className={cn(
+                      "w-4 h-4 shrink-0 transition-colors",
+                      isActive ? "text-accent" : "text-text-muted group-hover:text-text-primary"
+                    )}
+                  />
+                  <span className="truncate">{item.label}</span>
+                </Link>
+              );
+            })}
+          </nav>
+        </div>
+      </div>
 
-      <SidebarFooter className="p-3 border-t border-border">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              onClick={() => logout()}
-              tooltip="Sign out"
-              className="h-9 rounded-md text-text-muted hover:text-error hover:bg-error/10"
-            >
-              <LogOut className="w-4 h-4" />
-              <span className="text-sm">Sign out</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-        <p className="mono text-[10px] text-text-muted/70 mt-3 px-2">
-          v1.0.0 · Production
-        </p>
-      </SidebarFooter>
-    </ShadcnSidebar>
+      {/* User / Sign Out Footer */}
+      <div className="p-3.5 border-t border-border bg-bg-base/40 space-y-2">
+        {user && (
+          <div className="px-2 py-1 flex items-center gap-2">
+            <div className="w-7 h-7 rounded-full bg-accent/20 text-accent border border-accent/30 flex items-center justify-center text-xs font-semibold shrink-0">
+              {user.email.charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-text-primary truncate">{user.email}</p>
+              <p className="text-[10px] text-text-muted capitalize">{user.role}</p>
+            </div>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => logout()}
+          className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-text-muted hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+        >
+          <LogOut className="w-3.5 h-3.5" />
+          <span>Sign Out</span>
+        </button>
+
+        <div className="px-3 pt-1 text-[10px] text-text-muted/60 flex items-center justify-between">
+          <span>v1.0.0 Composable</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Connected" />
+        </div>
+      </div>
+    </aside>
   );
 }

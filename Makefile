@@ -1,106 +1,73 @@
-.PHONY: migrate upgrade seed test dev fix-alembic up down logs logs-api logs-web shell-api shell-web build recreate recreate-api restart
+.PHONY: up down down-v restart build dev logs logs-api logs-web logs-worker prod-up prod-down prod-build prod-logs migrate upgrade seed test evals shell-api shell-web
 
-# ==========================================
-# Local Server Commands
-# ==========================================
+# ==============================================================================
+# Local Development Stack (Self-Contained Postgres + Redis + Apps)
+# ==============================================================================
+up:
+	docker compose -f infra/docker-compose.yml up -d
+
+dev:
+	docker compose -f infra/docker-compose.yml up -d --build
+
+down:
+	docker compose -f infra/docker-compose.yml down
+
+down-v:
+	docker compose -f infra/docker-compose.yml down -v
+
+restart:
+	docker compose -f infra/docker-compose.yml restart
+
+build:
+	docker compose -f infra/docker-compose.yml build
+
+logs:
+	docker compose -f infra/docker-compose.yml logs -f
+
+logs-api:
+	docker compose -f infra/docker-compose.yml logs -f api
+
+logs-web:
+	docker compose -f infra/docker-compose.yml logs -f web
+
+logs-worker:
+	docker compose -f infra/docker-compose.yml logs -f worker
+
+# ==============================================================================
+# Production App Stack (Targeting External Managed DB & Redis)
+# ==============================================================================
+prod-up:
+	docker compose -f infra/docker-compose.prod.yml up -d
+
+prod-build:
+	docker compose -f infra/docker-compose.prod.yml build
+
+prod-down:
+	docker compose -f infra/docker-compose.prod.yml down
+
+prod-logs:
+	docker compose -f infra/docker-compose.prod.yml logs -f
+
+# ==============================================================================
+# Database & Utility Commands
+# ==============================================================================
 migrate:
-	cd server && python -m alembic revision --autogenerate -m "$(MSG)"
+	docker compose -f infra/docker-compose.yml exec api python -m alembic revision --autogenerate -m "$(MSG)"
 
 upgrade:
-	cd server && python -m alembic upgrade head
+	docker compose -f infra/docker-compose.yml exec api python -m alembic upgrade head
 
 seed:
-	docker-compose -f infra/docker-compose.yml exec api python -m scripts.seed
+	docker compose -f infra/docker-compose.yml exec api python -m scripts.seed
 
 test:
 	cd server && python -m scripts.test_chat
 
-dev:
-	cd server && python -m uvicorn app.main:app --reload
+evals:
+	docker compose -f infra/docker-compose.yml exec api python -m scripts.run_evals
 
-down:
-	docker-compose -f infra/docker-compose.yml down -v
-
-
-# Fixes "Can't locate revision identified by X" by wiping the migration table and restamping to head
-fix-alembic:
-	cd server && python -m alembic stamp head
-
-# ==========================================
-# Docker Commands
-# ==========================================
-# Start all services
-up:
-	docker-compose -f infra/docker-compose.yml up -d
-
-# Stop all services
-down:
-	docker-compose -f infra/docker-compose.yml down
-
-# View logs for all services
-logs:
-	docker-compose -f infra/docker-compose.yml logs -f
-
-# View logs for just the API (server)
-logs-api:
-	docker-compose -f infra/docker-compose.yml logs -f api
-
-# View logs for just the web frontend
-logs-web:
-	docker-compose -f infra/docker-compose.yml logs -f web
-
-# Open a shell in the API container
 shell-api:
-	docker-compose -f infra/docker-compose.yml exec api sh
+	docker compose -f infra/docker-compose.yml exec api sh
 
-# Open a shell in the web container
 shell-web:
-	docker-compose -f infra/docker-compose.yml exec web sh
-
-# Build docker images
-build:
-	docker-compose -f infra/docker-compose.yml build
-
-# Build docker images
-build-web:
-	docker-compose -f infra/docker-compose.yml build web
-
-# Deploy a local development environment
-dev:
-	docker-compose -f infra/docker-compose.yml up -d --build
-
-# Run the autoscaler demo
-autoscaler:
-	pip install redis
-	python server/scripts/autoscaler.py
-
-# Rebuild and recreate all containers
-recreate:
-	docker-compose -f infra/docker-compose.yml up -d --force-recreate --build -V
-
-# Rebuild and recreate just the API container
-recreate-api:
-	docker-compose -f infra/docker-compose.yml up -d --force-recreate --build -V api
-
-# Rebuild and recreate just the web container
-recreate-web:
-	docker-compose -f infra/docker-compose.yml up -d --force-recreate --build -V web
-recreate-worker:
-	docker-compose -f infra/docker-compose.yml up -d --force-recreate --build -V worker
-
-# Restart all services without rebuilding
-restart:
-	docker-compose -f infra/docker-compose.yml restart
-
-# View logs
-logs:
-	docker-compose -f infra/docker-compose.yml logs -f
-
-logs-api:
-	docker-compose -f infra/docker-compose.yml logs -f api
-
-logs-web:
-	docker-compose -f infra/docker-compose.yml logs -f web
-
-logs-worker:
-	docker-compose -f infra/docker-compose.yml logs -f worker
+	docker compose -f infra/docker-compose.yml exec web sh

@@ -14,3 +14,5 @@ redis
 langgraph-checkpoint-postgres
 psycopg-pool
 psycopg[binary]
+langchain
+jsonschema

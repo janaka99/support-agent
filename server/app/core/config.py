@@ -1,15 +1,21 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
+import os
+from dotenv import load_dotenv
 
+# Ensure environment variables from .env are injected into os.environ
+# so that libraries like LangChain and LangSmith can pick them up.
+load_dotenv("../.env")
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Support Agent API"
     DATABASE_URL: str
     OPENAI_API_KEY: str
     REDIS_URL: str
-    SECRET_KEY: str = "supersecretkey_change_in_production"
+    SECRET_KEY: str = "default_secret_key_change_in_production"
     
     # Comma-separated list of CORS origins
     CORS_ORIGINS: str = ""
+
 
     @property
     def cors_origins_list(self) -> List[str]:

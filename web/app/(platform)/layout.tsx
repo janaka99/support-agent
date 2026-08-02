@@ -4,13 +4,14 @@ import { useAuth } from "@/contexts/auth";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
-import { Building2 } from "lucide-react";
+import { Building2, LayoutDashboard } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { useEffect, useState } from "react";
 
 const navItems = [
   { label: "Organizations", href: "/platform", icon: Building2 },
+  { label: "Org Dashboard", href: "/dashboard", icon: LayoutDashboard },
 ];
 
 export default function PlatformLayout({

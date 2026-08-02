@@ -12,6 +12,14 @@ export function middleware(request: NextRequest) {
   }
 
   if (isAuthPage && token) {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.is_superuser) {
+        return NextResponse.redirect(new URL("/platform", request.url));
+      }
+    } catch (e) {
+      // ignore parsing error
+    }
     const dashUrl = new URL("/dashboard", request.url);
     return NextResponse.redirect(dashUrl);
   }
