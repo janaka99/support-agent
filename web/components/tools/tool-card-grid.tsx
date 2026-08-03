@@ -3,7 +3,7 @@
 import { Tool } from "@/lib/api/tools";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Play, Trash2, Edit3, Globe, Webhook, Code, Cpu } from "lucide-react";
+import { Play, Trash2, Edit3, Globe, Webhook, Code, Cpu, BookOpen } from "lucide-react";
 import Link from "next/link";
 
 interface ToolCardGridProps {
@@ -55,6 +55,8 @@ export function ToolCardGrid({
         return <Globe className="w-4 h-4 text-blue-400" />;
       case "webhook":
         return <Webhook className="w-4 h-4 text-purple-400" />;
+      case "rag_retriever":
+        return <BookOpen className="w-4 h-4 text-indigo-400" />;
       case "code_sandbox":
         return <Code className="w-4 h-4 text-emerald-400" />;
       default:

@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { ModelSelector } from "@/components/ui/model-selector";
 import {
   ShieldAlert,
   ShieldCheck,
@@ -904,16 +905,12 @@ export function GuardrailForm({
                   </div>
                 </div>
 
-                <div className="space-y-1.5 pt-2">
-                  <Label className="text-xs">Judge Model</Label>
-                  <select
+                <div className="pt-2">
+                  <ModelSelector
                     value={judgeModel}
-                    onChange={(e) => setJudgeModel(e.target.value)}
-                    className="w-full h-9 rounded-xl border border-border/40 bg-bg-base px-3 text-xs text-text-primary"
-                  >
-                    <option value="gpt-4o-mini">GPT-4o Mini (Fast & Cost-Efficient)</option>
-                    <option value="gpt-4o">GPT-4o (Maximum Reasoning Accuracy)</option>
-                  </select>
+                    onChange={setJudgeModel}
+                    label="Judge Model"
+                  />
                 </div>
               </div>
             )}
@@ -936,16 +933,12 @@ export function GuardrailForm({
                       <option value="strict">Strict (100% strict context fidelity)</option>
                     </select>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Judge Model</Label>
-                    <select
+                  <div>
+                    <ModelSelector
                       value={hallucinationModel}
-                      onChange={(e) => setHallucinationModel(e.target.value)}
-                      className="w-full h-9 rounded-xl border border-border/40 bg-bg-base px-3 text-xs text-text-primary"
-                    >
-                      <option value="gpt-4o-mini">GPT-4o Mini</option>
-                      <option value="gpt-4o">GPT-4o</option>
-                    </select>
+                      onChange={setHallucinationModel}
+                      label="Judge Model"
+                    />
                   </div>
                 </div>
 

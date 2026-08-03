@@ -11,6 +11,7 @@ import { Tool, toolsApi } from "@/lib/api/tools";
 import { GuardrailConfig, defaultGuardrails } from "@/lib/api/guardrails";
 import { GuardrailEditor } from "@/components/guardrails/guardrail-editor";
 import { GuardrailSelector } from "@/components/guardrails/guardrail-selector";
+import { ModelSelector } from "@/components/ui/model-selector";
 import { useRouter } from "next/navigation";
 import { Wrench, BookOpen, CheckCircle, Sparkles, Globe, Webhook, Code, Cpu, ArrowLeft, Save, Plus, Shield } from "lucide-react";
 import Link from "next/link";
@@ -209,21 +210,12 @@ export function AgentForm({ initialData }: Props) {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="model" className="text-xs text-text-secondary">
-                LLM Model
-              </Label>
-              <select
-                id="model"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                className="w-full h-9 rounded-md bg-bg-base border border-border px-3 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
-              >
-                <option value="gpt-4o-mini">GPT-4o Mini (Fast & Cost Efficient)</option>
-                <option value="gpt-4o">GPT-4o (High Reasoning)</option>
-                <option value="gpt-4-turbo">GPT-4 Turbo</option>
-              </select>
-            </div>
+            <ModelSelector
+              value={model}
+              onChange={setModel}
+              requireTools={selectedToolIds.length > 0}
+              label="LLM Model"
+            />
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">

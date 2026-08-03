@@ -343,8 +343,12 @@ async def seed():
                             )
                         )
 
+        # Seed AI Model Catalog
+        from scripts.seed_models import seed_models
+        await seed_models(session)
+
         await session.commit()
-        print("Database successfully seeded with default Tools, Guardrails, Specialist Agents, and Bots!")
+        print("Database successfully seeded with default Tools, Guardrails, Specialist Agents, Bots, and AI Models Catalog!")
 
 if __name__ == "__main__":
     asyncio.run(seed())

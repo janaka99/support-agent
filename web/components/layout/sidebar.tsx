@@ -23,7 +23,7 @@ export function Sidebar({ items, title, subtitle }: SidebarProps) {
   const { user, logout } = useAuth();
 
   return (
-    <aside className="w-64 h-screen sticky top-0 flex flex-col shrink-0 bg-bg-surface/80 border-r border-border backdrop-blur-xl z-30 select-none">
+    <aside className="w-64 h-screen sticky top-0 flex flex-col shrink-0 overflow-hidden bg-bg-surface/80 border-r border-border backdrop-blur-xl z-30 select-none">
       {/* Header / Brand */}
       <div className="p-5 border-b border-border flex items-center gap-3">
         <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-accent-muted border border-accent/20 text-accent shrink-0 shadow-xs">

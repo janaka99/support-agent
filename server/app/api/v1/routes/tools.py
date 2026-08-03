@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_db, get_current_user
 from app.db.models import Tool, User, agent_tools
 from app.schemas.tool import ToolCreate, ToolUpdate, ToolResponse, ToolTestRequest, ToolTestResponse
-from app.agent.tools.dynamic import execute_http_tool, BUILTIN_TOOLS
+from app.agent.tools.dynamic import execute_http_tool, execute_rag_retriever, BUILTIN_TOOLS
 
 router = APIRouter(prefix="/tools", tags=["Tools Hub"])
 
@@ -158,6 +158,19 @@ async def test_tool_execution(
                 status_code=res.get("status_code", 200),
                 data=res.get("data"),
                 error=res.get("error")
+            )
+        elif tool_type == "rag_retriever":
+            rag_res = await execute_rag_retriever(
+                config=config,
+                params=req.parameters,
+                db=db,
+                org_id=str(user.org_id)
+            )
+            return ToolTestResponse(
+                success="error" not in rag_res,
+                status_code=200 if "error" not in rag_res else 400,
+                data=rag_res,
+                error=rag_res.get("error")
             )
         elif tool_type == "builtin":
             fn_name = config.get("function") or req.parameters.get("name")

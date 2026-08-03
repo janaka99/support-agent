@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Integer, Float, Boolean, Table
+from sqlalchemy import Column, String, DateTime, Enum, ForeignKey, Integer, Float, Boolean, Table, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.orm import declarative_base, relationship
@@ -49,6 +49,8 @@ class Org(Base):
     bots = relationship("Bot", back_populates="org")
     tools = relationship("Tool", back_populates="org")
     guardrails = relationship("Guardrail", back_populates="org")
+    models = relationship("AIModel", back_populates="org")
+    knowledge_bases = relationship("KnowledgeBase", back_populates="org")
 
 class User(SQLAlchemyBaseUserTableUUID, Base):
     __tablename__ = "users"
@@ -225,3 +227,85 @@ class UsageLog(Base):
     
     org = relationship("Org")
     conversation = relationship("Conversation")
+
+
+class AIModel(Base):
+    __tablename__ = "models"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id = Column(UUID(as_uuid=True), ForeignKey("orgs.id", ondelete="CASCADE"), nullable=True) # NULL for global platform models
+    model_id = Column(String, nullable=False, index=True) # e.g. "gpt-4o-mini", "claude-3-5-sonnet-20241022"
+    name = Column(String, nullable=False) # e.g. "GPT-4o Mini"
+    provider = Column(String, nullable=False, index=True) # "openai", "anthropic", "google", "deepseek", "groq", "meta", "mistral", "openrouter", "custom"
+    provider_name = Column(String, nullable=False) # "OpenAI", "Anthropic", "Google", etc.
+    context_window = Column(Integer, default=128000, nullable=False)
+    supports_tools = Column(Boolean, default=True, nullable=False)
+    supports_vision = Column(Boolean, default=False, nullable=False)
+    supports_structured = Column(Boolean, default=True, nullable=False)
+    prompt_cost_per_million = Column(Float, default=0.50, nullable=False)
+    completion_cost_per_million = Column(Float, default=1.50, nullable=False)
+    description = Column(String, nullable=True)
+    tags = Column(JSONB, default=list, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_default = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    org = relationship("Org", back_populates="models")
+
+
+class KnowledgeBase(Base):
+    __tablename__ = "knowledge_bases"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id = Column(UUID(as_uuid=True), ForeignKey("orgs.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    embedding_model = Column(String, default="text-embedding-3-small", nullable=False)
+    chunk_size = Column(Integer, default=500, nullable=False)
+    chunk_overlap = Column(Integer, default=50, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    org = relationship("Org", back_populates="knowledge_bases")
+    documents = relationship("KnowledgeDocument", back_populates="knowledge_base", cascade="all, delete-orphan", order_by="KnowledgeDocument.created_at.desc()")
+    chunks = relationship("DocumentChunk", back_populates="knowledge_base", cascade="all, delete-orphan")
+
+
+class KnowledgeDocument(Base):
+    __tablename__ = "knowledge_documents"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    kb_id = Column(UUID(as_uuid=True), ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False)
+    org_id = Column(UUID(as_uuid=True), ForeignKey("orgs.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String, nullable=False)
+    source_type = Column(String, default="file", nullable=False) # "file", "raw_text", "url"
+    file_size_bytes = Column(Integer, nullable=True)
+    raw_content = Column(Text, nullable=True)
+    status = Column(String, default="pending", nullable=False) # "pending", "indexing", "ready", "error", "cancelled"
+    processing_progress = Column(Integer, default=0, nullable=False) # 0 - 100 percentage
+    error_message = Column(String, nullable=True)
+    chunk_count = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    knowledge_base = relationship("KnowledgeBase", back_populates="documents")
+    chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan", order_by="DocumentChunk.chunk_index.asc()")
+
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id = Column(UUID(as_uuid=True), ForeignKey("knowledge_documents.id", ondelete="CASCADE"), nullable=False)
+    kb_id = Column(UUID(as_uuid=True), ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False)
+    org_id = Column(UUID(as_uuid=True), ForeignKey("orgs.id", ondelete="CASCADE"), nullable=False)
+    content = Column(String, nullable=False)
+    chunk_index = Column(Integer, nullable=False)
+    embedding = Column(Vector(1536), nullable=False)
+    chunk_metadata = Column("metadata", JSONB, default=dict, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    document = relationship("KnowledgeDocument", back_populates="chunks")
+    knowledge_base = relationship("KnowledgeBase", back_populates="chunks")
+

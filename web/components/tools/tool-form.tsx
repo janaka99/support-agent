@@ -1,14 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Tool, ToolCreate, toolsApi } from "@/lib/api/tools";
+import { knowledgeBasesApi, KnowledgeBase } from "@/lib/api/knowledge-bases";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
-import { Plus, Trash2, Globe, Webhook, Code, Cpu, ArrowLeft, Save } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Globe,
+  Webhook,
+  Code,
+  Cpu,
+  BookOpen,
+  ArrowLeft,
+  Save,
+  Sliders,
+} from "lucide-react";
 import Link from "next/link";
 
 interface ParameterRow {
@@ -34,7 +46,7 @@ export function ToolForm({ initialTool, isEditing = false }: ToolFormProps) {
   const [description, setDescription] = useState(initialTool?.description || "");
   const [toolType, setToolType] = useState(initialTool?.tool_type || "http_request");
 
-  // Config State
+  // HTTP Config State
   const [url, setUrl] = useState(initialTool?.config?.url || "");
   const [method, setMethod] = useState(initialTool?.config?.method || "GET");
   const [headersJson, setHeadersJson] = useState(
@@ -44,10 +56,38 @@ export function ToolForm({ initialTool, isEditing = false }: ToolFormProps) {
     JSON.stringify(initialTool?.config?.body_template || {}, null, 2)
   );
 
+  // RAG Retriever State
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [isLoadingKbs, setIsLoadingKbs] = useState(false);
+  const [selectedKbId, setSelectedKbId] = useState(initialTool?.config?.kb_id || "");
+  const [topK, setTopK] = useState(initialTool?.config?.top_k || 4);
+  const [similarityThreshold, setSimilarityThreshold] = useState(
+    initialTool?.config?.similarity_threshold || 0.0
+  );
+
+  // Load KBs when RAG is selected or on mount
+  useEffect(() => {
+    async function loadKbs() {
+      try {
+        setIsLoadingKbs(true);
+        const data = await knowledgeBasesApi.list();
+        setKnowledgeBases(data);
+        if (!selectedKbId && data.length > 0) {
+          setSelectedKbId(data[0].id);
+        }
+      } catch (err) {
+        console.error("Failed to fetch knowledge bases for tool form:", err);
+      } finally {
+        setIsLoadingKbs(false);
+      }
+    }
+    loadKbs();
+  }, []);
+
   // Parameter Schema State
   const [parameters, setParameters] = useState<ParameterRow[]>(() => {
     if (!initialTool?.parameters_schema?.properties) {
-      return [{ name: "order_id", type: "string", description: "Order ID number", required: true }];
+      return [{ name: "query", type: "string", description: "Search query string", required: true }];
     }
     const props = initialTool.parameters_schema.properties;
     const reqSet = new Set(initialTool.parameters_schema.required || []);
@@ -90,23 +130,6 @@ export function ToolForm({ initialTool, isEditing = false }: ToolFormProps) {
         throw new Error("Tool slug identifier is required.");
       }
 
-      // Parse JSON headers & body
-      let parsedHeaders = {};
-      let parsedBody = undefined;
-      try {
-        parsedHeaders = JSON.parse(headersJson || "{}");
-      } catch {
-        throw new Error("Invalid JSON formatted HTTP Headers.");
-      }
-
-      if (method !== "GET" && bodyTemplateJson.trim()) {
-        try {
-          parsedBody = JSON.parse(bodyTemplateJson);
-        } catch {
-          throw new Error("Invalid JSON formatted Body Template.");
-        }
-      }
-
       // Build Parameters Schema
       const schemaProperties: Record<string, any> = {};
       const requiredFields: string[] = [];
@@ -128,17 +151,48 @@ export function ToolForm({ initialTool, isEditing = false }: ToolFormProps) {
         required: requiredFields,
       };
 
+      let config: Record<string, any> = {};
+
+      if (toolType === "rag_retriever") {
+        if (!selectedKbId) {
+          throw new Error("Please select a target Knowledge Base for this RAG tool.");
+        }
+        config = {
+          kb_id: selectedKbId,
+          top_k: Number(topK),
+          similarity_threshold: Number(similarityThreshold),
+        };
+      } else if (toolType === "http_request" || toolType === "webhook") {
+        let parsedHeaders = {};
+        let parsedBody = undefined;
+        try {
+          parsedHeaders = JSON.parse(headersJson || "{}");
+        } catch {
+          throw new Error("Invalid JSON formatted HTTP Headers.");
+        }
+
+        if (method !== "GET" && bodyTemplateJson.trim()) {
+          try {
+            parsedBody = JSON.parse(bodyTemplateJson);
+          } catch {
+            throw new Error("Invalid JSON formatted Body Template.");
+          }
+        }
+
+        config = {
+          url: url.trim(),
+          method: method.toUpperCase(),
+          headers: parsedHeaders,
+          ...(parsedBody && { body_template: parsedBody }),
+        };
+      }
+
       const payload: ToolCreate = {
         name: slug,
         display_name: displayName.trim() || slug,
         description: description.trim(),
         tool_type: toolType,
-        config: {
-          url: url.trim(),
-          method: method.toUpperCase(),
-          headers: parsedHeaders,
-          ...(parsedBody && { body_template: parsedBody }),
-        },
+        config,
         parameters_schema: parametersSchema,
       };
 
@@ -176,7 +230,7 @@ export function ToolForm({ initialTool, isEditing = false }: ToolFormProps) {
             </Label>
             <Input
               id="display-name"
-              placeholder="e.g. Check Order Tracking"
+              placeholder="e.g. Search Company Policies"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
               className="bg-bg-base border-border text-xs h-9"
@@ -190,7 +244,7 @@ export function ToolForm({ initialTool, isEditing = false }: ToolFormProps) {
             </Label>
             <Input
               id="name"
-              placeholder="e.g. check_order_tracking"
+              placeholder="e.g. search_company_policies"
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={isEditing}
@@ -206,7 +260,7 @@ export function ToolForm({ initialTool, isEditing = false }: ToolFormProps) {
           </Label>
           <Textarea
             id="description"
-            placeholder="Explain when and why the agent should invoke this tool. (e.g. 'Use this tool when the customer inquires about their shipping status or tracking number.')"
+            placeholder="Explain when and why the agent should invoke this tool. (e.g. 'Use this tool when the customer inquires about return windows, warranty policies, or terms.')"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             className="bg-bg-base border-border text-xs min-h-20"
@@ -216,8 +270,9 @@ export function ToolForm({ initialTool, isEditing = false }: ToolFormProps) {
 
         <div className="space-y-1.5">
           <Label className="text-xs text-text-secondary">Tool Type</Label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             {[
+              { id: "rag_retriever", label: "Knowledge Base (RAG)", icon: BookOpen },
               { id: "http_request", label: "REST API", icon: Globe },
               { id: "webhook", label: "Webhook", icon: Webhook },
               { id: "code_sandbox", label: "Python Sandbox", icon: Code },
@@ -237,7 +292,7 @@ export function ToolForm({ initialTool, isEditing = false }: ToolFormProps) {
                   }`}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
-                  <span>{t.label}</span>
+                  <span className="truncate">{t.label}</span>
                 </button>
               );
             })}
@@ -245,8 +300,80 @@ export function ToolForm({ initialTool, isEditing = false }: ToolFormProps) {
         </div>
       </div>
 
-      {/* 2. HTTP / Endpoint Configuration */}
-      {toolType !== "code_sandbox" && (
+      {/* 2. RAG Knowledge Base Configuration */}
+      {toolType === "rag_retriever" && (
+        <div className="p-6 rounded-xl border border-border bg-bg-surface space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-indigo-400" />
+              Knowledge Base Target
+            </h3>
+            <Link
+              href="/dashboard/knowledge-bases"
+              className="text-xs text-accent hover:underline inline-flex items-center gap-1"
+            >
+              <Plus className="w-3.5 h-3.5" /> Manage Knowledge Bases
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-1.5 md:col-span-1">
+              <Label className="text-xs text-text-secondary">Target Knowledge Base</Label>
+              {isLoadingKbs ? (
+                <div className="h-9 bg-bg-base border border-border rounded-md flex items-center px-3 text-xs text-text-muted">
+                  <Spinner size="sm" className="mr-2" /> Loading KBs...
+                </div>
+              ) : knowledgeBases.length === 0 ? (
+                <div className="text-xs text-rose-400 p-2 border border-rose-500/20 bg-rose-500/10 rounded-md">
+                  No Knowledge Bases found. Please create one first.
+                </div>
+              ) : (
+                <select
+                  value={selectedKbId}
+                  onChange={(e) => setSelectedKbId(e.target.value)}
+                  className="w-full h-9 rounded-md bg-bg-base border border-border px-3 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                >
+                  {knowledgeBases.map((kb) => (
+                    <option key={kb.id} value={kb.id}>
+                      {kb.name} ({kb.document_count} docs)
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            <div className="space-y-1.5 md:col-span-1">
+              <Label className="text-xs text-text-secondary">Top K Matches</Label>
+              <select
+                value={topK}
+                onChange={(e) => setTopK(Number(e.target.value))}
+                className="w-full h-9 rounded-md bg-bg-base border border-border px-3 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+              >
+                <option value={2}>2 Chunks</option>
+                <option value={4}>4 Chunks (Recommended)</option>
+                <option value={8}>8 Chunks</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5 md:col-span-1">
+              <Label className="text-xs text-text-secondary">Min Similarity Threshold</Label>
+              <select
+                value={similarityThreshold}
+                onChange={(e) => setSimilarityThreshold(Number(e.target.value))}
+                className="w-full h-9 rounded-md bg-bg-base border border-border px-3 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+              >
+                <option value={0.0}>0.0 (All top matches)</option>
+                <option value={0.3}>0.3 (Low threshold)</option>
+                <option value={0.5}>0.5 (Moderate)</option>
+                <option value={0.7}>0.7 (Strict)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. HTTP / Endpoint Configuration */}
+      {(toolType === "http_request" || toolType === "webhook") && (
         <div className="p-6 rounded-xl border border-border bg-bg-surface space-y-4">
           <h3 className="text-sm font-semibold text-text-primary">Endpoint Configuration</h3>
 
@@ -278,7 +405,7 @@ export function ToolForm({ initialTool, isEditing = false }: ToolFormProps) {
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 className="bg-bg-base border-border text-xs h-9 font-mono"
-                required={toolType === "http_request" || toolType === "webhook"}
+                required
               />
             </div>
           </div>
@@ -315,7 +442,7 @@ export function ToolForm({ initialTool, isEditing = false }: ToolFormProps) {
         </div>
       )}
 
-      {/* 3. Input Arguments Schema */}
+      {/* 4. Input Arguments Schema */}
       <div className="p-6 rounded-xl border border-border bg-bg-surface space-y-4">
         <div className="flex items-center justify-between">
           <div>
@@ -363,55 +490,55 @@ export function ToolForm({ initialTool, isEditing = false }: ToolFormProps) {
                 </select>
               </div>
 
-              <div className="sm:col-span-4">
+              <div className="sm:col-span-5">
                 <Input
-                  placeholder="Description for LLM"
+                  placeholder="Prompt description for argument"
                   value={param.description}
                   onChange={(e) => updateParameter(idx, "description", e.target.value)}
                   className="bg-bg-surface border-border text-xs h-8"
                 />
               </div>
 
-              <div className="sm:col-span-2 flex items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  id={`req-${idx}`}
-                  checked={param.required}
-                  onChange={(e) => updateParameter(idx, "required", e.target.checked)}
-                  className="rounded border-border bg-bg-surface text-accent focus:ring-accent w-4 h-4"
-                />
-                <Label htmlFor={`req-${idx}`} className="text-xs text-text-muted cursor-pointer">
-                  Required
-                </Label>
+              <div className="sm:col-span-1 flex items-center justify-center">
+                <label className="flex items-center gap-1 text-[11px] text-text-muted cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={param.required}
+                    onChange={(e) => updateParameter(idx, "required", e.target.checked)}
+                    className="rounded border-border"
+                  />
+                  <span>Req</span>
+                </label>
               </div>
 
               <div className="sm:col-span-1 flex justify-end">
-                <Button
+                <button
                   type="button"
-                  variant="ghost"
-                  size="sm"
                   onClick={() => removeParameter(idx)}
-                  className="h-7 w-7 p-0 text-text-muted hover:text-rose-400"
+                  className="text-text-muted hover:text-rose-400 p-1 transition-colors"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </Button>
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex items-center justify-between pt-2">
+      {/* 5. Submit Button */}
+      <div className="flex items-center justify-end gap-3">
         <Link href="/dashboard/tools">
-          <Button type="button" variant="ghost" className="gap-2 text-xs text-text-muted">
-            <ArrowLeft className="w-4 h-4" /> Cancel
+          <Button type="button" variant="outline" size="sm" className="text-xs">
+            Cancel
           </Button>
         </Link>
-
-        <Button type="submit" disabled={isSubmitting} className="btn-primary gap-2 text-xs">
-          {isSubmitting ? <Spinner size="sm" /> : <Save className="w-4 h-4" />}
-          <span>{isEditing ? "Update Tool" : "Publish Tool"}</span>
+        <Button
+          type="submit"
+          disabled={isSubmitting}
+          className="btn-primary gap-2 text-xs h-9 px-5"
+        >
+          {isSubmitting ? <Spinner size="sm" /> : <Save className="w-3.5 h-3.5" />}
+          {isEditing ? "Save Tool Changes" : "Create Tool"}
         </Button>
       </div>
     </form>

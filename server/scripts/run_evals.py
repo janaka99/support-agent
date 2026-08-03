@@ -56,9 +56,9 @@ async def run_evals():
         for idx, scenario in enumerate(scenarios, 1):
             input_text = scenario["input"]
             expected_route = scenario["expected_route"]
-            # standardize expected route to match node names
-            if expected_route == "unclear":
-                expected_route = "clarify_node"
+            # standardize expected route to match node names (supervisor handles direct responses)
+            if expected_route in ("unclear", "clarify_node"):
+                expected_route = "supervisor_node"
                 
             eval_criterion = scenario["eval_criterion"]
 

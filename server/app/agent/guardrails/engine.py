@@ -12,6 +12,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 import jsonschema
 
 from app.core.config import settings
+from app.core.llm_factory import get_chat_model
 from app.db.models import Guardrail, Escalation, UsageLog
 from app.schemas.guardrail import (
     GuardrailConfig,
@@ -104,6 +105,9 @@ def check_deterministic_guardrails(
             return False, "deterministic_pii", "Phone number detected in input"
 
     return True, None, None
+
+# Backward compatibility alias
+run_deterministic_checks = check_deterministic_guardrails
 
 async def evaluate_single_guardrail(
     guardrail: Union[Guardrail, GuardrailCreate, dict],
@@ -306,7 +310,7 @@ async def evaluate_single_guardrail(
             violation_reason: Optional[str] = None
 
         try:
-            llm = ChatOpenAI(model=judge_model, api_key=settings.OPENAI_API_KEY, temperature=0.0, max_retries=2)
+            llm = get_chat_model(model_identifier=judge_model, temperature=0.0, max_retries=2)
             judge = llm.with_structured_output(GuardrailDecision)
 
             context_msgs = []
@@ -648,7 +652,7 @@ async def evaluate_guardrails(
             violation_reason: Optional[str] = None
 
         try:
-            llm = ChatOpenAI(model=model_name, api_key=settings.OPENAI_API_KEY, temperature=0.0, max_retries=2)
+            llm = get_chat_model(model_identifier=model_name, temperature=0.0, max_retries=2)
             judge = llm.with_structured_output(GuardrailDecision)
 
             context_msgs = []

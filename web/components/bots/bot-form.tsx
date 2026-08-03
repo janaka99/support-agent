@@ -5,14 +5,25 @@ import { useRouter } from "next/navigation";
 import { Bot, BotCreate, BotAgentAssociation, botsApi } from "@/lib/api/bots";
 import { Agent, agentsApi } from "@/lib/api/agents";
 import { GuardrailConfig } from "@/lib/api/guardrails";
-import { GuardrailEditor } from "@/components/guardrails/guardrail-editor";
 import { GuardrailSelector } from "@/components/guardrails/guardrail-selector";
+import { ModelSelector } from "@/components/ui/model-selector";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Spinner } from "@/components/ui/spinner";
-import { Bot as BotIcon, Cpu, ArrowLeft, Save, Sparkles, CheckSquare, Square, Shield } from "lucide-react";
+import {
+  Cpu,
+  ArrowLeft,
+  Save,
+  Sparkles,
+  CheckCircle2,
+  Plus,
+  Trash2,
+  Search,
+  CheckCheck,
+  XCircle,
+} from "lucide-react";
 import Link from "next/link";
 
 interface BotFormProps {
@@ -28,6 +39,7 @@ export function BotForm({ initialBot, isEditing = false }: BotFormProps) {
   // Available Agents list
   const [allAgents, setAllAgents] = useState<Agent[]>([]);
   const [isLoadingAgents, setIsLoadingAgents] = useState(true);
+  const [agentSearch, setAgentSearch] = useState("");
 
   // Bot Form State
   const [name, setName] = useState(initialBot?.name || "");
@@ -36,11 +48,11 @@ export function BotForm({ initialBot, isEditing = false }: BotFormProps) {
     initialBot?.greeting_message || "Hello! How can I help you today?"
   );
   const [systemPrompt, setSystemPrompt] = useState(
-    initialBot?.system_prompt || "You are an intelligent supervisor router directing customer queries to the right specialist."
+    initialBot?.system_prompt || "You are a helpful and polite AI assistant. Answer user inquiries clearly and accurately according to your instructions and knowledge."
   );
   const [model, setModel] = useState(initialBot?.model || "gpt-4o-mini");
   const [isActive, setIsActive] = useState(initialBot?.is_active ?? true);
-  const [guardrails, setGuardrails] = useState<GuardrailConfig | undefined>(initialBot?.guardrails);
+  const [guardrails] = useState<GuardrailConfig | undefined>(initialBot?.guardrails);
   const [selectedGuardrailIds, setSelectedGuardrailIds] = useState<string[]>(
     initialBot?.assigned_guardrails?.map((g) => g.id) || []
   );
@@ -65,18 +77,6 @@ export function BotForm({ initialBot, isEditing = false }: BotFormProps) {
         setIsLoadingAgents(true);
         const data = await agentsApi.list();
         setAllAgents(data);
-
-        // If creating new bot and nothing selected, default to selecting all agents
-        if (!initialBot && data.length > 0) {
-          const map: Record<string, { routingHint: string; priority: number }> = {};
-          data.forEach((ag, idx) => {
-            map[ag.id] = {
-              routingHint: ag.specialization || "",
-              priority: idx,
-            };
-          });
-          setSelectedAgentMap(map);
-        }
       } catch (err) {
         console.error("Failed to load agents:", err);
       } finally {
@@ -84,7 +84,7 @@ export function BotForm({ initialBot, isEditing = false }: BotFormProps) {
       }
     }
     loadAgents();
-  }, [initialBot]);
+  }, []);
 
   const toggleAgent = (agent: Agent) => {
     setSelectedAgentMap((prev) => {
@@ -99,6 +99,21 @@ export function BotForm({ initialBot, isEditing = false }: BotFormProps) {
       }
       return copy;
     });
+  };
+
+  const selectAllAgents = () => {
+    const map: Record<string, { routingHint: string; priority: number }> = {};
+    allAgents.forEach((ag, idx) => {
+      map[ag.id] = {
+        routingHint: selectedAgentMap[ag.id]?.routingHint || ag.specialization || "",
+        priority: selectedAgentMap[ag.id]?.priority ?? idx,
+      };
+    });
+    setSelectedAgentMap(map);
+  };
+
+  const clearAllAgents = () => {
+    setSelectedAgentMap({});
   };
 
   const updateRoutingHint = (agentId: string, hint: string) => {
@@ -156,6 +171,18 @@ export function BotForm({ initialBot, isEditing = false }: BotFormProps) {
     }
   };
 
+  const filteredAgents = allAgents.filter((ag) => {
+    if (!agentSearch.trim()) return true;
+    const query = agentSearch.toLowerCase();
+    return (
+      ag.name.toLowerCase().includes(query) ||
+      ag.specialization.toLowerCase().includes(query) ||
+      (ag.system_prompt && ag.system_prompt.toLowerCase().includes(query))
+    );
+  });
+
+  const assignedCount = Object.keys(selectedAgentMap).length;
+
   return (
     <form onSubmit={handleSubmit} className="space-y-8 max-w-4xl pb-12">
       {error && (
@@ -183,21 +210,11 @@ export function BotForm({ initialBot, isEditing = false }: BotFormProps) {
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="supervisor-model" className="text-xs text-text-secondary">
-              Supervisor Router LLM Model
-            </Label>
-            <select
-              id="supervisor-model"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="w-full h-9 rounded-md bg-bg-base border border-border px-3 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
-            >
-              <option value="gpt-4o-mini">GPT-4o Mini (Fast & Low Cost)</option>
-              <option value="gpt-4o">GPT-4o (High Intelligence)</option>
-              <option value="gpt-4-turbo">GPT-4 Turbo</option>
-            </select>
-          </div>
+          <ModelSelector
+            value={model}
+            onChange={setModel}
+            label="Supervisor Router Model"
+          />
         </div>
 
         <div className="space-y-1.5">
@@ -255,17 +272,60 @@ export function BotForm({ initialBot, isEditing = false }: BotFormProps) {
 
       {/* 2. Assemble Specialist Agent Team */}
       <div className="p-6 rounded-xl border border-border bg-bg-surface space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-text-primary">Specialist Agent Team Roster</h3>
             <p className="text-xs text-text-muted mt-0.5">
               Select which specialist agents work for this Bot and configure their routing triggers.
             </p>
           </div>
-          <span className="text-xs text-text-muted">
-            <span className="font-semibold text-accent">{Object.keys(selectedAgentMap).length}</span> agents assigned
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-text-muted mr-1">
+              <span className="font-semibold text-accent">{assignedCount}</span> of{" "}
+              {allAgents.length} assigned
+            </span>
+            {allAgents.length > 0 && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={selectAllAgents}
+                  disabled={assignedCount === allAgents.length}
+                  className="h-7 text-[11px] gap-1 px-2.5"
+                  title="Assign all specialist agents to this bot"
+                >
+                  <CheckCheck className="w-3.5 h-3.5 text-accent" />
+                  Select All
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={clearAllAgents}
+                  disabled={assignedCount === 0}
+                  className="h-7 text-[11px] gap-1 px-2.5 text-rose-400 hover:text-rose-300"
+                  title="Remove all specialist agents from this bot"
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                  Clear All
+                </Button>
+              </>
+            )}
+          </div>
         </div>
+
+        {allAgents.length > 3 && (
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+            <Input
+              placeholder="Search specialist agents by name or specialization..."
+              value={agentSearch}
+              onChange={(e) => setAgentSearch(e.target.value)}
+              className="pl-8 bg-bg-base border-border text-xs h-8"
+            />
+          </div>
+        )}
 
         {isLoadingAgents ? (
           <div className="p-8 flex justify-center">
@@ -282,63 +342,110 @@ export function BotForm({ initialBot, isEditing = false }: BotFormProps) {
               </Button>
             </Link>
           </div>
+        ) : filteredAgents.length === 0 ? (
+          <div className="p-4 text-center rounded-lg border border-border bg-bg-base text-xs text-text-muted">
+            No specialist agents match &ldquo;{agentSearch}&rdquo;.
+          </div>
         ) : (
           <div className="space-y-3">
-            {allAgents.map((ag) => {
+            {filteredAgents.map((ag) => {
               const isSelected = !!selectedAgentMap[ag.id];
               return (
                 <div
                   key={ag.id}
-                  className={`p-4 rounded-xl border transition-all ${
+                  onClick={() => toggleAgent(ag)}
+                  className={`p-4 rounded-xl border transition-all cursor-pointer select-none ${
                     isSelected
-                      ? "border-accent/40 bg-accent-muted/10 shadow-sm"
-                      : "border-border bg-bg-base opacity-75 hover:opacity-100"
+                      ? "border-accent/50 bg-accent/5 shadow-sm ring-1 ring-accent/20"
+                      : "border-border bg-bg-base opacity-75 hover:opacity-100 hover:border-border-strong"
                   }`}
                 >
-                  <div className="flex items-start gap-3">
-                    <button
-                      type="button"
-                      onClick={() => toggleAgent(ag)}
-                      className="mt-0.5 text-accent focus:outline-none"
-                    >
-                      {isSelected ? (
-                        <CheckSquare className="w-5 h-5 fill-accent/20 text-accent" />
-                      ) : (
-                        <Square className="w-5 h-5 text-text-muted hover:text-text-primary" />
-                      )}
-                    </button>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-semibold text-text-primary truncate">
-                          {ag.name}
-                        </h4>
-                        <span className="mono text-[10px] px-2 py-0.5 rounded-full bg-bg-elevated text-text-muted border border-border">
-                          {ag.specialization}
-                        </span>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3 min-w-0 flex-1">
+                      <div className="mt-0.5 shrink-0">
+                        {isSelected ? (
+                          <div className="w-5 h-5 rounded-md bg-accent/20 border border-accent flex items-center justify-center text-accent">
+                            <CheckCircle2 className="w-4 h-4 text-accent fill-accent/20" />
+                          </div>
+                        ) : (
+                          <div className="w-5 h-5 rounded-md border border-border bg-bg-surface hover:border-text-muted flex items-center justify-center text-transparent">
+                            <Plus className="w-3.5 h-3.5 text-text-muted" />
+                          </div>
+                        )}
                       </div>
 
-                      <p className="text-xs text-text-secondary mt-1 line-clamp-1">
-                        {ag.system_prompt}
-                      </p>
-
-                      {isSelected && (
-                        <div className="mt-3 pt-3 border-t border-border/60 grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
-                          <div className="sm:col-span-12">
-                            <Label className="text-[11px] text-text-muted">
-                              Custom Routing Hint for this Bot:
-                            </Label>
-                            <Input
-                              placeholder="e.g. Order tracking, delivery estimates, UPS/FedEx status..."
-                              value={selectedAgentMap[ag.id]?.routingHint || ""}
-                              onChange={(e) => updateRoutingHint(ag.id, e.target.value)}
-                              className="mt-1 bg-bg-surface border-border text-xs h-8"
-                            />
-                          </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-sm font-semibold text-text-primary">
+                            {ag.name}
+                          </h4>
+                          <span className="mono text-[10px] px-2 py-0.5 rounded-full bg-bg-elevated text-text-muted border border-border">
+                            {ag.specialization}
+                          </span>
+                          {isSelected && (
+                            <span className="text-[10px] font-medium px-2 py-0.2 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              Assigned
+                            </span>
+                          )}
                         </div>
+
+                        <p className="text-xs text-text-secondary mt-1 line-clamp-1">
+                          {ag.system_prompt || "No system prompt specified."}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Action Button */}
+                    <div className="shrink-0">
+                      {isSelected ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleAgent(ag);
+                          }}
+                          className="h-7 text-[11px] gap-1 px-2 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Remove
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleAgent(ag);
+                          }}
+                          className="h-7 text-[11px] gap-1 px-2 border-accent/40 text-accent hover:bg-accent/10"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Assign
+                        </Button>
                       )}
                     </div>
                   </div>
+
+                  {isSelected && (
+                    <div
+                      className="mt-3 pt-3 border-t border-border/60"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Label className="text-[11px] text-text-muted flex items-center gap-1.5">
+                        <Sparkles className="w-3 h-3 text-accent" />
+                        Custom Routing Trigger for this Bot:
+                      </Label>
+                      <Input
+                        placeholder="e.g. Order tracking, delivery estimates, UPS/FedEx status..."
+                        value={selectedAgentMap[ag.id]?.routingHint || ""}
+                        onChange={(e) => updateRoutingHint(ag.id, e.target.value)}
+                        className="mt-1 bg-bg-surface border-border text-xs h-8"
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}

@@ -8,7 +8,9 @@ from pydantic import BaseModel, create_model, Field
 from langchain_core.tools import StructuredTool
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Tool, AuditLog
+from app.db.models import Tool, AuditLog, KnowledgeBase, KnowledgeDocument, DocumentChunk
+from app.services.document_parser import generate_single_embedding
+from sqlalchemy import select
 from app.agent.tools.orders import get_order_status, get_order_history
 from app.agent.tools.payment import check_payment_status, process_refund
 from app.agent.tools.system import escalate_to_human
@@ -124,6 +126,95 @@ async def execute_http_tool(config: Dict[str, Any], params: Dict[str, Any]) -> D
                 "success": False
             }
 
+
+async def execute_rag_retriever(
+    config: dict,
+    params: dict,
+    db: Optional[AsyncSession],
+    org_id: Optional[str]
+) -> dict:
+    """Executes a semantic vector similarity search against a specific KnowledgeBase."""
+    if not db or not org_id:
+        return {"error": "Database session or Organization context not available for RAG search."}
+
+    kb_id_str = config.get("kb_id")
+    if not kb_id_str:
+        return {"error": "No Knowledge Base configured for this tool."}
+
+    try:
+        kb_id = uuid.UUID(str(kb_id_str))
+        tenant_org_id = uuid.UUID(str(org_id))
+    except Exception as parse_err:
+        return {"error": f"Invalid Knowledge Base or Organization ID: {parse_err}"}
+
+    top_k = int(config.get("top_k", 4))
+    similarity_threshold = float(config.get("similarity_threshold", 0.0))
+    query_text = params.get("query") or params.get("search_query") or params.get("text") or params.get("q") or str(params)
+
+    # 1. Fetch KB embedding model
+    kb_res = await db.execute(
+        select(KnowledgeBase).where(
+            KnowledgeBase.id == kb_id,
+            KnowledgeBase.org_id == tenant_org_id
+        )
+    )
+    kb = kb_res.scalar_one_or_none()
+    if not kb:
+        return {"error": f"Knowledge base '{kb_id}' not found."}
+
+    # 2. Embed query
+    query_embedding = await generate_single_embedding(
+        text=str(query_text),
+        model_name=kb.embedding_model
+    )
+
+    # 3. Query pgvector
+    cosine_distance = DocumentChunk.embedding.cosine_distance(query_embedding)
+    stmt = (
+        select(
+            DocumentChunk,
+            KnowledgeDocument.title.label("doc_title"),
+            cosine_distance.label("distance")
+        )
+        .join(KnowledgeDocument, DocumentChunk.document_id == KnowledgeDocument.id)
+        .where(
+            DocumentChunk.kb_id == kb_id,
+            DocumentChunk.org_id == tenant_org_id
+        )
+        .order_by(cosine_distance.asc())
+        .limit(top_k)
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    matches = []
+    for chunk_obj, doc_title, distance in rows:
+        sim_score = max(0.0, min(1.0, 1.0 - float(distance)))
+        if sim_score >= similarity_threshold:
+            matches.append({
+                "document_title": doc_title,
+                "content": chunk_obj.content,
+                "similarity_score": round(sim_score, 4),
+                "chunk_index": chunk_obj.chunk_index
+            })
+
+    if not matches:
+        return {
+            "query": str(query_text),
+            "knowledge_base": kb.name,
+            "results_count": 0,
+            "results": [],
+            "message": "No relevant policy or document chunks found in this knowledge base."
+        }
+
+    return {
+        "query": str(query_text),
+        "knowledge_base": kb.name,
+        "results_count": len(matches),
+        "results": matches
+    }
+
+
 def create_langchain_tool(
     tool_model: Tool,
     db: Optional[AsyncSession] = None,
@@ -158,6 +249,14 @@ def create_langchain_tool(
 
             elif tool_type in ["http_request", "webhook"]:
                 result = await execute_http_tool(tool_model.config, kwargs)
+
+            elif tool_type == "rag_retriever":
+                result = await execute_rag_retriever(
+                    config=tool_model.config,
+                    params=kwargs,
+                    db=db,
+                    org_id=org_id
+                )
 
             elif tool_type == "code_sandbox":
                 # Safe evaluation for math/expressions

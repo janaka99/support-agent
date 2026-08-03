@@ -6,28 +6,7 @@ import uuid
 from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
-MODEL_PRICING = {
-    "gpt-4o-mini": {
-        "prompt_cost_per_million": 0.15,
-        "completion_cost_per_million": 0.60,
-    },
-    "gpt-4o": {
-        "prompt_cost_per_million": 2.50,
-        "completion_cost_per_million": 10.00,
-    },
-    "gpt-4-turbo": {
-        "prompt_cost_per_million": 10.00,
-        "completion_cost_per_million": 30.00,
-    },
-    "claude-3-5-sonnet-20240620": {
-        "prompt_cost_per_million": 3.00,
-        "completion_cost_per_million": 15.00,
-    },
-    "text-embedding-3-small": {
-        "prompt_cost_per_million": 0.02,
-        "completion_cost_per_million": 0.00,
-    },
-}
+from app.core.models_registry import get_model_info
 
 DEFAULT_PRICING = {
     "prompt_cost_per_million": 0.50,
@@ -38,13 +17,14 @@ DEFAULT_PRICING = {
 def calculate_cost(model_name: str, prompt_tokens: int = 0, completion_tokens: int = 0) -> float:
     """
     Calculate the total estimated USD cost for an LLM or embedding call based on token counts.
+    Resolves pricing dynamically from the model registry.
     """
-    clean_model = (model_name or "gpt-4o-mini").lower()
+    clean_model = (model_name or "gpt-4o-mini").strip()
     
-    pricing = MODEL_PRICING.get(clean_model, DEFAULT_PRICING)
+    model_info = get_model_info(clean_model)
     
-    prompt_rate = pricing["prompt_cost_per_million"] / 1_000_000.0
-    completion_rate = pricing["completion_cost_per_million"] / 1_000_000.0
+    prompt_rate = model_info.get("prompt_cost_per_million", DEFAULT_PRICING["prompt_cost_per_million"]) / 1_000_000.0
+    completion_rate = model_info.get("completion_cost_per_million", DEFAULT_PRICING["completion_cost_per_million"]) / 1_000_000.0
     
     cost = (prompt_tokens * prompt_rate) + (completion_tokens * completion_rate)
     return round(cost, 8)

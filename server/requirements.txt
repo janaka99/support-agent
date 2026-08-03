@@ -16,3 +16,5 @@ psycopg-pool
 psycopg[binary]
 langchain
 jsonschema
+pypdf
+tiktoken

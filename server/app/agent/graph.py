@@ -14,15 +14,15 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from app.db.models import Agent, Bot, BotAgent, Tool, Document, AuditLog, Escalation, Conversation, Guardrail
 from app.agent.state import AgentState
 from app.agent.tools.dynamic import create_langchain_tool
-from app.agent.nodes.clarify import clarify_node
 from app.agent.guardrails.engine import (
     evaluate_guardrails,
     evaluate_guardrails_for_stage,
-    run_deterministic_checks,
-    normalize_guardrail_config
+    normalize_guardrail_config,
+    run_deterministic_checks
 )
 from app.core.config import settings
 from app.core.cost import record_usage_log
+from app.core.llm_factory import get_chat_model
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +33,9 @@ def route_from_ingress_guardrail(state: AgentState) -> str:
     return "supervisor_node"
 
 def route_from_supervisor(state: AgentState) -> str:
-    next_node = state.get("next_node", "unclear")
-    if next_node == "unclear":
-        return "clarify_node"
+    next_node = state.get("next_node", END)
+    if next_node in (END, "end", "direct", "clarify_node", "unclear"):
+        return END
     return next_node
 
 def route_from_tools(state: AgentState) -> str:
@@ -90,16 +90,18 @@ async def build_bot_graph(
     routing_info = []
     agent_names = []
 
-    if bot and bot.bot_agents:
-        for ba in sorted(bot.bot_agents, key=lambda x: x.priority):
-            agent = ba.agent
-            if agent:
-                agents_list.append(agent)
-                agent_names.append(agent.name)
-                hint = ba.routing_hint or agent.specialization
-                routing_info.append(f"If the request is about {hint}, route to '{agent.name}'.")
+    if bot:
+        # Strictly use agents assigned to this Bot touchpoint
+        if bot.bot_agents:
+            for ba in sorted(bot.bot_agents, key=lambda x: x.priority):
+                agent = ba.agent
+                if agent:
+                    agents_list.append(agent)
+                    agent_names.append(agent.name)
+                    hint = ba.routing_hint or agent.specialization
+                    routing_info.append(f"If the request is about {hint}, route to '{agent.name}'.")
     else:
-        # Fallback to all org agents if no bot or no bot_agents assigned
+        # Fallback to all org agents ONLY when no specific bot is configured
         result = await db.execute(
             select(Agent)
             .where(Agent.org_id == uuid.UUID(org_id))
@@ -154,50 +156,104 @@ async def build_bot_graph(
 
         return {"next_node": "supervisor_node"}
 
-    routing_instructions = " ".join(routing_info)
-    bot_custom_prompt = (bot.system_prompt + " ") if (bot and bot.system_prompt) else ""
-    
-    supervisor_prompt = (
-        "You are an intelligent supervisor router. Your job is to classify the user's latest message. "
-        f"{bot_custom_prompt}"
-        f"{routing_instructions} "
-        "If it is general greeting, neither, or unclear, route to 'unclear'."
+    # Supervisor Prompt & Routing Setup
+    bot_display_name = bot.name if bot else "Support Assistant"
+    bot_system_prompt_text = bot.system_prompt if (bot and bot.system_prompt) else "You are a helpful and polite customer support assistant."
+    bot_greeting_pref = f"\nPreferred greeting tone: '{bot.greeting_message}'" if (bot and bot.greeting_message) else ""
+
+    # Direct response system prompt (for greetings and out-of-scope/direct queries)
+    specialist_hints = [f"- {a.name}: {a.specialization or a.system_prompt}" for a in agents_list]
+    roster_summary = ("Available specialist capabilities:\n" + "\n".join(specialist_hints)) if specialist_hints else ""
+
+    direct_system_prompt = (
+        f"You are '{bot_display_name}'.\n"
+        f"Persona and Instructions:\n{bot_system_prompt_text}\n"
+        f"{bot_greeting_pref}\n\n"
+        f"{roster_summary}\n\n"
+        "Guidelines:\n"
+        "- Respond naturally and helpfully in character.\n"
+        "- If the user's inquiry is outside your domain and not supported by your instructions or available specialists, politely state that you cannot assist with that topic and clarify what you can help with.\n"
+        "- Never promise to connect, transfer, or put the user on hold for non-existent specialists or external departments."
     )
 
     supervisor_model = bot.model if bot else "gpt-4o-mini"
-    llm = ChatOpenAI(model=supervisor_model, api_key=settings.OPENAI_API_KEY, max_retries=2)
+    llm = get_chat_model(model_identifier=supervisor_model, temperature=0.2, max_retries=2)
 
     async def dynamic_supervisor_node(state: AgentState) -> dict:
-        system_message = SystemMessage(content=supervisor_prompt)
+        messages = list(state.get("messages", []))
 
         if not agent_names:
-            return {"next_node": "unclear"}
+            # When no specialist agents are assigned, the Bot handles the conversation directly
+            system_message = SystemMessage(content=direct_system_prompt)
+            response = await llm.ainvoke([system_message] + messages)
 
-        # Dynamic Route Enum
+            prompt_chars = sum(len(m.content) for m in messages if hasattr(m, 'content') and m.content) + len(direct_system_prompt)
+            prompt_tokens = max(int(prompt_chars / 4), 25)
+            await record_usage_log(
+                db=db,
+                org_id=org_id,
+                conversation_id=state.get("conversation_id"),
+                node_name=f"{bot_display_name} (Direct)",
+                model=supervisor_model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=max(int(len(response.content or "") / 4), 10),
+            )
+
+            return {"messages": [response], "next_node": END}
+
+        # Specialist team attached: Decide whether to delegate or respond directly
+        routing_instructions = "\n".join(routing_info)
+        supervisor_router_prompt = (
+            f"You are the supervisor router for '{bot_display_name}'.\n"
+            f"Bot Persona & Direct Guidelines:\n{bot_system_prompt_text}\n\n"
+            f"Specialist Team Roster:\n{routing_instructions}\n\n"
+            "Decision instructions:\n"
+            "- If the user inquiry specifically requires one of the specialist agents listed above, route to that agent's name.\n"
+            "- If the message is a greeting, general chat, or handled directly by your bot guidelines, select 'direct'."
+        )
+
         routes_dict = {name: name for name in agent_names}
-        routes_dict["unclear"] = "unclear"
+        routes_dict["direct"] = "direct"
         RouteEnum = Enum('RouteEnum', routes_dict)
 
         class RouteSelection(BaseModel):
             next: RouteEnum
 
-        structured_llm = llm.with_structured_output(RouteSelection)
-        decision = await structured_llm.ainvoke([system_message] + list(state['messages']))
+        router_llm = get_chat_model(model_identifier=supervisor_model, temperature=0.0, max_retries=2)
+        structured_llm = router_llm.with_structured_output(RouteSelection)
+        decision = await structured_llm.ainvoke([SystemMessage(content=supervisor_router_prompt)] + messages)
 
         # Token usage recording
-        prompt_chars = sum(len(m.content) for m in state.get('messages', []) if hasattr(m, 'content') and m.content) + len(supervisor_prompt)
+        prompt_chars = sum(len(m.content) for m in messages if hasattr(m, 'content') and m.content) + len(supervisor_router_prompt)
         prompt_tokens = max(int(prompt_chars / 4), 25)
         await record_usage_log(
             db=db,
             org_id=org_id,
             conversation_id=state.get("conversation_id"),
-            node_name=f"Supervisor Router ({bot.name if bot else 'Default'})",
+            node_name=f"Supervisor Router ({bot_display_name})",
             model=supervisor_model,
             prompt_tokens=prompt_tokens,
             completion_tokens=15,
         )
 
-        return {"next_node": decision.next.value}
+        chosen = decision.next.value
+        if chosen == "direct":
+            # Bot directly answers using its own system prompt and finishes
+            system_message = SystemMessage(content=direct_system_prompt)
+            direct_response = await llm.ainvoke([system_message] + messages)
+
+            await record_usage_log(
+                db=db,
+                org_id=org_id,
+                conversation_id=state.get("conversation_id"),
+                node_name=f"{bot_display_name} (Direct Response)",
+                model=supervisor_model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=max(int(len(direct_response.content or "") / 4), 10),
+            )
+            return {"messages": [direct_response], "next_node": END}
+
+        return {"next_node": chosen}
 
     # Pre-Tool Guardrail Interceptor Node (Runs before Tools execute)
     async def pre_tool_guardrail_node(state: AgentState) -> dict:
@@ -284,15 +340,13 @@ async def build_bot_graph(
     workflow = StateGraph(AgentState)
     workflow.add_node("ingress_guardrail_node", ingress_guardrail_node)
     workflow.add_node("supervisor_node", dynamic_supervisor_node)
-    workflow.add_node("clarify_node", clarify_node)
     workflow.add_node("pre_tool_guardrail_node", pre_tool_guardrail_node)
 
     # Ingress Guardrail runs first at START
     workflow.add_edge(START, "ingress_guardrail_node")
     workflow.add_conditional_edges("ingress_guardrail_node", route_from_ingress_guardrail, {"supervisor_node": "supervisor_node", END: END})
-    workflow.add_edge("clarify_node", END)
 
-    conditional_map = {"clarify_node": "clarify_node"}
+    conditional_map = {END: END}
     for name in agent_names:
         conditional_map[name] = name
 
@@ -346,7 +400,7 @@ async def build_bot_graph(
                         logger.warning(f"RAG lookup error: {rag_err}")
 
                 # 2. LLM Invocation
-                agent_llm = ChatOpenAI(model=model_name, temperature=temperature, api_key=settings.OPENAI_API_KEY, max_retries=2)
+                agent_llm = get_chat_model(model_identifier=model_name, temperature=temperature, max_retries=2)
                 if tools:
                     agent_llm = agent_llm.bind_tools(tools)
 
