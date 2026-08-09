@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, use } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { chatApi } from "@/lib/api/chat";
 import { Send, Bot, User, AlertTriangle, ShieldAlert, Copy, Check, Sparkles } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
@@ -210,7 +212,11 @@ export default function ChatConversationPage({
                     </div>
                   )}
 
-                  <p className="whitespace-pre-wrap">{msg.content}</p>
+                  <div className="prose prose-sm prose-invert max-w-none break-words">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
                 </div>
 
                 {/* Copy button for assistant responses */}

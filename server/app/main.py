@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 
@@ -32,3 +32,18 @@ app.add_middleware(
 
 # Standard API v1 routes
 app.include_router(api_router, prefix="/api/v1")
+
+@app.middleware("http")
+async def log_request_body(request: Request, call_next):
+    if "/api/v1/guardrails" in request.url.path and request.method == "POST":
+        body = await request.body()
+        print("====== INCOMING RAW BODY ======")
+        print(body.decode("utf-8"))
+        print("===============================")
+        # Recreate the stream for downstream processing
+        async def receive():
+            return {"type": "http.request", "body": body}
+        request._receive = receive
+    return await call_next(request)
+
+# Root path for health check

@@ -74,9 +74,12 @@ async def list_guardrails(
 
     return summaries
 
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+
 @router.post("", response_model=GuardrailResponse, status_code=status.HTTP_201_CREATED)
 @router.post("/", response_model=GuardrailResponse, status_code=status.HTTP_201_CREATED)
 async def create_guardrail(
+    request: Request,
     payload: GuardrailCreate,
     db: AsyncSession = Depends(get_tenant_db),
     user: User = Depends(current_active_user)
@@ -84,6 +87,11 @@ async def create_guardrail(
     """
     Create a new reusable safety guardrail policy.
     """
+    raw_body = await request.body()
+    print("=== RAW GUARDRAIL POST BODY ===")
+    print(raw_body)
+    print("===============================")
+
     # Check for name uniqueness within organization
     existing = await db.execute(
         select(Guardrail).where(Guardrail.org_id == user.org_id, Guardrail.name == payload.name)

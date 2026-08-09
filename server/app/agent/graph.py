@@ -98,8 +98,8 @@ async def build_bot_graph(
                 if agent:
                     agents_list.append(agent)
                     agent_names.append(agent.name)
-                    hint = ba.routing_hint or agent.specialization
-                    routing_info.append(f"If the request is about {hint}, route to '{agent.name}'.")
+                    hint = ba.routing_hint or agent.specialization or ""
+                    routing_info.append(f"{agent.name}: {hint}")
     else:
         # Fallback to all org agents ONLY when no specific bot is configured
         result = await db.execute(
@@ -110,7 +110,8 @@ async def build_bot_graph(
         agents_list = result.scalars().all()
         for agent in agents_list:
             agent_names.append(agent.name)
-            routing_info.append(f"If the request is about {agent.specialization}, route to '{agent.name}'.")
+            hint = agent.specialization or ""
+            routing_info.append(f"{agent.name}: {hint}")
 
     # Collect all attached first-class guardrails
     all_attached_guardrails = []
@@ -156,44 +157,26 @@ async def build_bot_graph(
 
         return {"next_node": "supervisor_node"}
 
-    # Supervisor Prompt & Routing Setup
-    bot_display_name = bot.name if bot else "Support Assistant"
-    bot_system_prompt_text = bot.system_prompt if (bot and bot.system_prompt) else "You are a helpful and polite customer support assistant."
-    bot_greeting_pref = f"\nPreferred greeting tone: '{bot.greeting_message}'" if (bot and bot.greeting_message) else ""
-
-    # Direct response system prompt (for greetings and out-of-scope/direct queries)
-    specialist_hints = [f"- {a.name}: {a.specialization or a.system_prompt}" for a in agents_list]
-    roster_summary = ("Available specialist capabilities:\n" + "\n".join(specialist_hints)) if specialist_hints else ""
-
-    direct_system_prompt = (
-        f"You are '{bot_display_name}'.\n"
-        f"Persona and Instructions:\n{bot_system_prompt_text}\n"
-        f"{bot_greeting_pref}\n\n"
-        f"{roster_summary}\n\n"
-        "Guidelines:\n"
-        "- Respond naturally and helpfully in character.\n"
-        "- If the user's inquiry is outside your domain and not supported by your instructions or available specialists, politely state that you cannot assist with that topic and clarify what you can help with.\n"
-        "- Never promise to connect, transfer, or put the user on hold for non-existent specialists or external departments."
-    )
-
-    supervisor_model = bot.model if bot else "gpt-4o-mini"
+    # Supervisor Execution Setup
+    bot_name = bot.name if bot else "Assistant"
+    bot_prompt = bot.system_prompt if (bot and bot.system_prompt) else ""
+    supervisor_model = bot.model if (bot and bot.model) else "gpt-4o-mini"
     llm = get_chat_model(model_identifier=supervisor_model, temperature=0.2, max_retries=2)
 
     async def dynamic_supervisor_node(state: AgentState) -> dict:
         messages = list(state.get("messages", []))
 
+        # 1. Standalone Bot (no specialist agents assigned)
         if not agent_names:
-            # When no specialist agents are assigned, the Bot handles the conversation directly
-            system_message = SystemMessage(content=direct_system_prompt)
-            response = await llm.ainvoke([system_message] + messages)
+            response = await llm.ainvoke([SystemMessage(content=bot_prompt)] + messages)
 
-            prompt_chars = sum(len(m.content) for m in messages if hasattr(m, 'content') and m.content) + len(direct_system_prompt)
+            prompt_chars = sum(len(m.content) for m in messages if hasattr(m, 'content') and m.content) + len(bot_prompt)
             prompt_tokens = max(int(prompt_chars / 4), 25)
             await record_usage_log(
                 db=db,
                 org_id=org_id,
                 conversation_id=state.get("conversation_id"),
-                node_name=f"{bot_display_name} (Direct)",
+                node_name=bot_name,
                 model=supervisor_model,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=max(int(len(response.content or "") / 4), 10),
@@ -201,17 +184,7 @@ async def build_bot_graph(
 
             return {"messages": [response], "next_node": END}
 
-        # Specialist team attached: Decide whether to delegate or respond directly
-        routing_instructions = "\n".join(routing_info)
-        supervisor_router_prompt = (
-            f"You are the supervisor router for '{bot_display_name}'.\n"
-            f"Bot Persona & Direct Guidelines:\n{bot_system_prompt_text}\n\n"
-            f"Specialist Team Roster:\n{routing_instructions}\n\n"
-            "Decision instructions:\n"
-            "- If the user inquiry specifically requires one of the specialist agents listed above, route to that agent's name.\n"
-            "- If the message is a greeting, general chat, or handled directly by your bot guidelines, select 'direct'."
-        )
-
+        # 2. Supervisor with Specialists attached
         routes_dict = {name: name for name in agent_names}
         routes_dict["direct"] = "direct"
         RouteEnum = Enum('RouteEnum', routes_dict)
@@ -219,18 +192,20 @@ async def build_bot_graph(
         class RouteSelection(BaseModel):
             next: RouteEnum
 
+        agents_roster = "\n".join(routing_info)
+        router_prompt = f"{bot_prompt}\n\nAgents:\n{agents_roster}"
+
         router_llm = get_chat_model(model_identifier=supervisor_model, temperature=0.0, max_retries=2)
         structured_llm = router_llm.with_structured_output(RouteSelection)
-        decision = await structured_llm.ainvoke([SystemMessage(content=supervisor_router_prompt)] + messages)
+        decision = await structured_llm.ainvoke([SystemMessage(content=router_prompt)] + messages)
 
-        # Token usage recording
-        prompt_chars = sum(len(m.content) for m in messages if hasattr(m, 'content') and m.content) + len(supervisor_router_prompt)
+        prompt_chars = sum(len(m.content) for m in messages if hasattr(m, 'content') and m.content) + len(router_prompt)
         prompt_tokens = max(int(prompt_chars / 4), 25)
         await record_usage_log(
             db=db,
             org_id=org_id,
             conversation_id=state.get("conversation_id"),
-            node_name=f"Supervisor Router ({bot_display_name})",
+            node_name=f"{bot_name} (Router)",
             model=supervisor_model,
             prompt_tokens=prompt_tokens,
             completion_tokens=15,
@@ -238,15 +213,13 @@ async def build_bot_graph(
 
         chosen = decision.next.value
         if chosen == "direct":
-            # Bot directly answers using its own system prompt and finishes
-            system_message = SystemMessage(content=direct_system_prompt)
-            direct_response = await llm.ainvoke([system_message] + messages)
+            direct_response = await llm.ainvoke([SystemMessage(content=bot_prompt)] + messages)
 
             await record_usage_log(
                 db=db,
                 org_id=org_id,
                 conversation_id=state.get("conversation_id"),
-                node_name=f"{bot_display_name} (Direct Response)",
+                node_name=bot_name,
                 model=supervisor_model,
                 prompt_tokens=prompt_tokens,
                 completion_tokens=max(int(len(direct_response.content or "") / 4), 10),
