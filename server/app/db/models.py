@@ -120,6 +120,7 @@ class Bot(Base):
     model = Column(String, nullable=False, default="gpt-4o-mini")
     is_active = Column(Boolean, default=True, nullable=False)
     guardrails = Column(JSONB, nullable=True, default=dict) # legacy embedded config support
+    telegram_bot_token = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     org = relationship("Org", back_populates="bots")
@@ -157,6 +158,8 @@ class Conversation(Base):
     bot_id = Column(UUID(as_uuid=True), ForeignKey("bots.id"), nullable=True)
     status = Column(String, nullable=False, default="open") # "open", "closed", etc.
     title = Column(String, nullable=True)
+    channel = Column(String, nullable=False, default="web")
+    external_chat_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     org = relationship("Org", back_populates="conversations")

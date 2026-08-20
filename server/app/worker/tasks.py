@@ -1,13 +1,15 @@
 import json
 import uuid
 import logging
+import re
+import httpx
 from typing import List
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from sqlalchemy import select, delete
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from app.core.database import async_session_maker
-from app.db.models import Message, Conversation, KnowledgeBase, KnowledgeDocument, DocumentChunk
+from app.db.models import Message, Conversation, KnowledgeBase, KnowledgeDocument, DocumentChunk, Bot
 from app.agent.graph import build_bot_graph
 from app.services.document_parser import chunk_text, generate_embeddings_batch
 from app.core.redis import redis_client
@@ -27,12 +29,16 @@ async def process_chat_job(job_id: str, data: dict, worker_name: str):
     print(f"[{worker_name}] Processing chat job: {job_id} for Conversation {conv_id} (Bot: {bot_id})")
     
     async with async_session_maker() as db:
-        # If bot_id was not explicitly in data payload, look it up from conversation
-        if not bot_id and conv_id:
-            res = await db.execute(select(Conversation.bot_id).where(Conversation.id == uuid.UUID(str(conv_id))))
-            bot_id_val = res.scalar_one_or_none()
-            if bot_id_val:
-                bot_id = str(bot_id_val)
+        # Fetch conversation to check channel and bot
+        conv_res = await db.execute(select(Conversation).where(Conversation.id == uuid.UUID(str(conv_id))))
+        conversation = conv_res.scalar_one_or_none()
+        channel = "web"
+        external_chat_id = None
+        if conversation:
+            if not bot_id and conversation.bot_id:
+                bot_id = str(conversation.bot_id)
+            channel = conversation.channel
+            external_chat_id = conversation.external_chat_id
 
         conn_string = str(settings.DATABASE_URL).replace('+asyncpg', '')
         
@@ -87,6 +93,40 @@ async def process_chat_job(job_id: str, data: dict, worker_name: str):
                 await redis_client.publish(channel_name, payload)
                 await redis_client.publish(channel_name, "[DONE]")
                 
+                # Telegram integration
+                if channel == "telegram" and external_chat_id and bot_id:
+                    bot_res = await db.execute(select(Bot).where(Bot.id == uuid.UUID(bot_id)))
+                    bot_obj = bot_res.scalar_one_or_none()
+                    if bot_obj and bot_obj.telegram_bot_token:
+                        inline_keyboard = []
+                        links = re.findall(r'\[([^\]]+)\]\(([^)]+)\)', assistant_content)
+                        if links:
+                            buttons = []
+                            for text_label, url_or_data in links:
+                                if url_or_data.startswith("action:"):
+                                    buttons.append({"text": text_label, "callback_data": url_or_data[7:]})
+                                else:
+                                    buttons.append({"text": text_label, "url": url_or_data})
+                            if buttons:
+                                inline_keyboard = [[b] for b in buttons]
+                            
+                            clean_content = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', '', assistant_content).strip()
+                        else:
+                            clean_content = assistant_content
+                            
+                        payload_data = {
+                            "chat_id": external_chat_id,
+                            "text": clean_content
+                        }
+                        if inline_keyboard:
+                            payload_data["reply_markup"] = {"inline_keyboard": inline_keyboard}
+                            
+                        async with httpx.AsyncClient() as client:
+                            await client.post(
+                                f"https://api.telegram.org/bot{bot_obj.telegram_bot_token}/sendMessage",
+                                json=payload_data
+                            )
+                
                 print(f"[{worker_name}] Successfully saved reply for job {job_id}")
 
             except Exception as e:
@@ -110,6 +150,16 @@ async def process_chat_job(job_id: str, data: dict, worker_name: str):
                 })
                 await redis_client.publish(channel_name, payload)
                 await redis_client.publish(channel_name, "[DONE]")
+                
+                if channel == "telegram" and external_chat_id and bot_id:
+                    bot_res = await db.execute(select(Bot).where(Bot.id == uuid.UUID(bot_id)))
+                    bot_obj = bot_res.scalar_one_or_none()
+                    if bot_obj and bot_obj.telegram_bot_token:
+                        async with httpx.AsyncClient() as client:
+                            await client.post(
+                                f"https://api.telegram.org/bot{bot_obj.telegram_bot_token}/sendMessage",
+                                json={"chat_id": external_chat_id, "text": error_content}
+                            )
 
 
 async def process_document_job(job_id: str, data: dict, worker_name: str):

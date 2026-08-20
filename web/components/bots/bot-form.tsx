@@ -23,6 +23,7 @@ import {
   Search,
   CheckCheck,
   XCircle,
+  MessageCircle,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -50,12 +51,27 @@ export function BotForm({ initialBot, isEditing = false }: BotFormProps) {
   const [systemPrompt, setSystemPrompt] = useState(
     initialBot?.system_prompt || "You are a helpful and polite AI assistant. Answer user inquiries clearly and accurately according to your instructions and knowledge."
   );
+  const [telegramBotToken, setTelegramBotToken] = useState(initialBot?.telegram_bot_token || "");
   const [model, setModel] = useState(initialBot?.model || "gpt-4o-mini");
   const [isActive, setIsActive] = useState(initialBot?.is_active ?? true);
   const [guardrails] = useState<GuardrailConfig | undefined>(initialBot?.guardrails);
   const [selectedGuardrailIds, setSelectedGuardrailIds] = useState<string[]>(
     initialBot?.assigned_guardrails?.map((g) => g.id) || []
   );
+  
+  const handleRegisterTelegram = async () => {
+    if (!initialBot?.id) return;
+    if (!telegramBotToken.trim()) {
+      alert("Please enter a Telegram Bot Token first.");
+      return;
+    }
+    try {
+      const res = await botsApi.registerTelegram(initialBot.id, telegramBotToken.trim());
+      alert(`Successfully registered webhook: ${res.webhook_url}`);
+    } catch (err: any) {
+      alert(`Failed to register Telegram webhook: ${err.message}`);
+    }
+  };
 
   // Selected Specialist Agents with routing hints & priorities
   const [selectedAgentMap, setSelectedAgentMap] = useState<Record<string, { routingHint: string; priority: number }>>(() => {
@@ -149,6 +165,7 @@ export function BotForm({ initialBot, isEditing = false }: BotFormProps) {
         description: description.trim() || undefined,
         greeting_message: greetingMessage.trim() || undefined,
         system_prompt: systemPrompt.trim() || undefined,
+        telegram_bot_token: telegramBotToken.trim() || undefined,
         model,
         is_active: isActive,
         guardrails: guardrails,
@@ -254,6 +271,43 @@ export function BotForm({ initialBot, isEditing = false }: BotFormProps) {
             onChange={(e) => setSystemPrompt(e.target.value)}
             className="bg-bg-base border-border text-xs min-h-20"
           />
+        </div>
+        
+        <div className="pt-4 border-t border-border">
+          <h4 className="text-xs font-semibold text-text-primary mb-3 flex items-center gap-1.5">
+            <MessageCircle className="w-3.5 h-3.5 text-blue-500" />
+            Telegram Integration
+          </h4>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="telegram" className="text-xs text-text-secondary">
+                Telegram Bot Token
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  id="telegram"
+                  placeholder="e.g. 123456789:ABCdefGHIjklmNOPqrstUVWxyz"
+                  value={telegramBotToken}
+                  onChange={(e) => setTelegramBotToken(e.target.value)}
+                  className="bg-bg-base border-border text-xs h-9 flex-1"
+                />
+                {isEditing && (
+                  <Button 
+                    type="button" 
+                    variant="secondary" 
+                    size="sm"
+                    className="h-9 px-4 text-xs"
+                    onClick={handleRegisterTelegram}
+                  >
+                    Register Webhook
+                  </Button>
+                )}
+              </div>
+              <p className="text-[10px] text-text-muted">
+                You must save the Bot first before registering the webhook.
+              </p>
+            </div>
+          </div>
         </div>
 
         <div className="flex items-center gap-2 pt-1">

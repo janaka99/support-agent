@@ -13,6 +13,7 @@ from app.api.v1.routes import (
     guardrails,
     models,
     knowledge_bases,
+    telegram,
 )
 
 api_router = APIRouter()
@@ -29,3 +30,4 @@ api_router.include_router(models.router, tags=["models"])
 api_router.include_router(guardrails.router, prefix="/guardrails", tags=["guardrails"])
 api_router.include_router(escalations.router, prefix="/escalations", tags=["escalations"])
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"])
+api_router.include_router(telegram.router, prefix="/telegram", tags=["telegram"])

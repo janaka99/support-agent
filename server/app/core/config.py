@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     
     # Comma-separated list of CORS origins
     CORS_ORIGINS: str = ""
+    
+    # Public URL for webhooks (e.g., ngrok)
+    PUBLIC_API_URL: str = ""
 
 
     @property
